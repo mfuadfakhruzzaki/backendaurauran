@@ -8,7 +8,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// Role merepresentasikan peran pengguna
+// Role represents user roles
 type Role string
 
 const (
@@ -17,11 +17,12 @@ const (
 	RoleMember  Role = "member"
 )
 
-// User merepresentasikan model pengguna
+// User represents the user model
 type User struct {
 	ID                  uint            `gorm:"primaryKey" json:"id"`
 	CreatedAt           time.Time       `json:"created_at"`
 	UpdatedAt           time.Time       `json:"updated_at"`
+	Username            string          `gorm:"uniqueIndex;not null" json:"username" validate:"required"`
 	Email               string          `gorm:"uniqueIndex;not null" json:"email" validate:"required,email"`
 	Password            string          `gorm:"not null" json:"-"`
 	Role                Role            `gorm:"type:varchar(50);not null" json:"role" validate:"required,oneof=admin manager member"`
@@ -34,7 +35,7 @@ type User struct {
 	Notes               []Note          `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE" json:"notes,omitempty"`
 }
 
-// BeforeCreate GORM hook untuk meng-hash password sebelum disimpan ke database
+// BeforeCreate hashes the password before saving to the database
 func (u *User) BeforeCreate(tx *gorm.DB) (err error) {
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(u.Password), bcrypt.DefaultCost)
 	if err != nil {
@@ -44,9 +45,8 @@ func (u *User) BeforeCreate(tx *gorm.DB) (err error) {
 	return
 }
 
-// BeforeUpdate GORM hook untuk meng-hash password jika diubah
+// BeforeUpdate hashes the password if it has been changed
 func (u *User) BeforeUpdate(tx *gorm.DB) (err error) {
-	// Memeriksa apakah field "Password" diubah (gunakan kapital "P")
 	if tx.Statement.Changed("Password") {
 		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(u.Password), bcrypt.DefaultCost)
 		if err != nil {
@@ -57,16 +57,16 @@ func (u *User) BeforeUpdate(tx *gorm.DB) (err error) {
 	return
 }
 
-// ComparePassword membandingkan password input dengan hashed password
+// ComparePassword compares a plain text password with the hashed password
 func (u *User) ComparePassword(password string) bool {
 	err := bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(password))
 	return err == nil
 }
 
-// DB adalah instance global dari database
+// DB is the global database instance
 var DB *gorm.DB
 
-// InitModels menginisialisasi koneksi database
+// InitModels initializes the database connection
 func InitModels(db *gorm.DB) {
 	DB = db
 }

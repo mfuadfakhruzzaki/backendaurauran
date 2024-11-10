@@ -8,17 +8,19 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/mfuadfakhruzzaki/backendaurauran/models"
-	"github.com/mfuadfakhruzzaki/backendaurauran/utils"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
+
+	"github.com/mfuadfakhruzzaki/backendaurauran/models"
+	"github.com/mfuadfakhruzzaki/backendaurauran/utils"
 )
 
 // RegisterRequest represents the request structure for user registration
 type RegisterRequest struct {
-    Email          string `json:"email" binding:"required,email"`
-    Password       string `json:"password" binding:"required,min=6"`
-    InvitationCode string `json:"invitation_code"`
+	Username       string `json:"username" binding:"required"`
+	Email          string `json:"email" binding:"required,email"`
+	Password       string `json:"password" binding:"required,min=6"`
+	InvitationCode string `json:"invitation_code"`
 }
 
 // LoginRequest represents the request structure for user login
@@ -62,10 +64,14 @@ func Register(c *gin.Context) {
 		role = models.RoleManager
 	}
 
-	// Check if user already exists
+	// Check if user with the same email or username already exists
 	var existingUser models.User
-	if err := models.DB.Where("email = ?", req.Email).First(&existingUser).Error; err == nil {
-		utils.ErrorResponse(c, http.StatusConflict, "Email already registered")
+	if err := models.DB.Where("email = ? OR username = ?", req.Email, req.Username).First(&existingUser).Error; err == nil {
+		if existingUser.Email == req.Email {
+			utils.ErrorResponse(c, http.StatusConflict, "Email already registered")
+		} else if existingUser.Username == req.Username {
+			utils.ErrorResponse(c, http.StatusConflict, "Username already taken")
+		}
 		return
 	} else if err != gorm.ErrRecordNotFound {
 		utils.Logger.Errorf("Failed to check existing user: %v", err)
@@ -75,6 +81,7 @@ func Register(c *gin.Context) {
 
 	// Create new user
 	user := models.User{
+		Username: req.Username,
 		Email:    req.Email,
 		Password: req.Password, // Password will be hashed by GORM hook
 		Role:     role,
@@ -175,57 +182,56 @@ func Login(c *gin.Context) {
 
 // Logout handles user logout by blacklisting the JWT token
 func Logout(c *gin.Context) {
-    // Ambil token dari header Authorization
-    authHeader := c.GetHeader("Authorization")
-    if authHeader == "" {
-        utils.ErrorResponse(c, http.StatusBadRequest, "Authorization header required")
-        return
-    }
+	// Get token from Authorization header
+	authHeader := c.GetHeader("Authorization")
+	if authHeader == "" {
+		utils.ErrorResponse(c, http.StatusBadRequest, "Authorization header required")
+		return
+	}
 
-    // Ekstrak token
-    parts := strings.Split(authHeader, " ")
-    if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
-        utils.ErrorResponse(c, http.StatusBadRequest, "Invalid authorization header format")
-        return
-    }
-    tokenStr := parts[1]
+	// Extract token
+	parts := strings.Split(authHeader, " ")
+	if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
+		utils.ErrorResponse(c, http.StatusBadRequest, "Invalid authorization header format")
+		return
+	}
+	tokenStr := parts[1]
 
-    // Parse JWT token untuk mendapatkan klaim
-    claims, err := utils.ParseJWT(tokenStr)
-    if err != nil {
-        utils.Logger.Errorf("Failed to parse JWT token: %v", err)
-        utils.ErrorResponse(c, http.StatusUnauthorized, "Invalid token")
-        return
-    }
+	// Parse JWT token to get claims
+	claims, err := utils.ParseJWT(tokenStr)
+	if err != nil {
+		utils.Logger.Errorf("Failed to parse JWT token: %v", err)
+		utils.ErrorResponse(c, http.StatusUnauthorized, "Invalid token")
+		return
+	}
 
-    // Tambahkan token ke blacklist dengan UserID yang diambil dari klaim
-    blacklistToken := models.Token{
-        UserID:    claims.UserID, // Pastikan UserID diisi
-        Token:     tokenStr,
-        Type:      models.TokenTypeJWTBlacklist,
-        ExpiresAt: time.Now().Add(time.Hour * 24), // Sesuaikan durasi blacklist
-    }
+	// Add token to blacklist with UserID from claims
+	blacklistToken := models.Token{
+		UserID:    claims.UserID,
+		Token:     tokenStr,
+		Type:      models.TokenTypeJWTBlacklist,
+		ExpiresAt: time.Now().Add(time.Hour * 24), // Adjust blacklist duration
+	}
 
-    if err := models.DB.Create(&blacklistToken).Error; err != nil {
-        utils.Logger.Errorf("Failed to blacklist token: %v", err)
-        utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to logout")
-        return
-    }
+	if err := models.DB.Create(&blacklistToken).Error; err != nil {
+		utils.Logger.Errorf("Failed to blacklist token: %v", err)
+		utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to logout")
+		return
+	}
 
-    utils.Logger.Infof("Token blacklisted successfully for user ID: %d", claims.UserID)
+	utils.Logger.Infof("Token blacklisted successfully for user ID: %d", claims.UserID)
 
-    // Kirim respons sukses
-    utils.SuccessResponse(c, gin.H{
-        "message": "Successfully logged out",
-    })
+	// Send success response
+	utils.SuccessResponse(c, gin.H{
+		"message": "Successfully logged out",
+	})
 }
-
 
 // VerifyEmail handles email verification
 func VerifyEmail(c *gin.Context) {
 	tokenStr := c.Query("token")
 	if tokenStr == "" {
-		// Render halaman gagal dengan pesan
+		// Render failure page with message
 		c.Data(http.StatusBadRequest, "text/html; charset=utf-8", []byte(failureHTML))
 		return
 	}
@@ -233,18 +239,18 @@ func VerifyEmail(c *gin.Context) {
 	var token models.Token
 	if err := models.DB.Where("token = ? AND type = ?", tokenStr, models.TokenTypeEmailVerify).First(&token).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			// Render halaman gagal dengan pesan
+			// Render failure page with message
 			c.Data(http.StatusBadRequest, "text/html; charset=utf-8", []byte(failureHTML))
 			return
 		}
 		utils.Logger.Errorf("Failed to verify email token: %v", err)
-		// Render halaman gagal dengan pesan generik
+		// Render generic failure page
 		c.Data(http.StatusInternalServerError, "text/html; charset=utf-8", []byte(failureHTML))
 		return
 	}
 
 	if token.ExpiresAt.Before(time.Now()) {
-		// Render halaman gagal dengan pesan token kedaluwarsa
+		// Render failure page with expired token message
 		c.Data(http.StatusBadRequest, "text/html; charset=utf-8", []byte(failureHTML))
 		return
 	}
@@ -252,7 +258,7 @@ func VerifyEmail(c *gin.Context) {
 	var user models.User
 	if err := models.DB.First(&user, token.UserID).Error; err != nil {
 		utils.Logger.Errorf("User not found for email verification: %v", err)
-		// Render halaman gagal dengan pesan generik
+		// Render generic failure page
 		c.Data(http.StatusInternalServerError, "text/html; charset=utf-8", []byte(failureHTML))
 		return
 	}
@@ -261,7 +267,7 @@ func VerifyEmail(c *gin.Context) {
 
 	if err := models.DB.Save(&user).Error; err != nil {
 		utils.Logger.Errorf("Failed to update user email verification: %v", err)
-		// Render halaman gagal dengan pesan generik
+		// Render generic failure page
 		c.Data(http.StatusInternalServerError, "text/html; charset=utf-8", []byte(failureHTML))
 		return
 	}
@@ -269,12 +275,12 @@ func VerifyEmail(c *gin.Context) {
 	// Delete the token after verification
 	if err := models.DB.Delete(&token).Error; err != nil {
 		utils.Logger.Errorf("Failed to delete email verification token: %v", err)
-		// Tidak mengembalikan error karena email sudah diverifikasi
+		// Do not return error since email is already verified
 	}
 
 	utils.Logger.Infof("Email verified successfully for user: %s", user.Email)
 
-	// Render halaman sukses verifikasi email
+	// Render email verification success page
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(successVerifyHTML))
 }
 
@@ -291,7 +297,7 @@ func RequestPasswordReset(c *gin.Context) {
 	// Find user by email
 	if err := models.DB.Where("email = ?", req.Email).First(&user).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			// Tidak mengungkapkan apakah email ada atau tidak untuk keamanan
+			// Do not reveal whether the email exists or not for security
 			utils.SuccessResponse(c, gin.H{
 				"message": "If the email is registered, a password reset link has been sent.",
 			})
@@ -342,10 +348,10 @@ func RequestPasswordReset(c *gin.Context) {
 
 // ResetPasswordForm handles rendering the reset password form (GET request)
 func ResetPasswordForm(c *gin.Context) {
-	// Ambil token dari query parameter
+	// Get token from query parameter
 	tokenStr := c.Query("token")
 	if tokenStr == "" {
-		// Render halaman gagal dengan pesan
+		// Render failure page with message
 		c.Data(http.StatusBadRequest, "text/html; charset=utf-8", []byte(failureHTML))
 		return
 	}
@@ -353,24 +359,24 @@ func ResetPasswordForm(c *gin.Context) {
 	var token models.Token
 	if err := models.DB.Where("token = ? AND type = ?", tokenStr, models.TokenTypePasswordReset).First(&token).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			// Render halaman gagal dengan pesan
+			// Render failure page with message
 			c.Data(http.StatusBadRequest, "text/html; charset=utf-8", []byte(failureHTML))
 			return
 		}
 		utils.Logger.Errorf("Failed to verify reset token: %v", err)
-		// Render halaman gagal dengan pesan generik
+		// Render generic failure page
 		c.Data(http.StatusInternalServerError, "text/html; charset=utf-8", []byte(failureHTML))
 		return
 	}
 
 	if token.ExpiresAt.Before(time.Now()) {
-		// Render halaman gagal dengan pesan token kedaluwarsa
+		// Render failure page with expired token message
 		c.Data(http.StatusBadRequest, "text/html; charset=utf-8", []byte(failureHTML))
 		return
 	}
 
-	// Render halaman reset password dengan form
-	// Anda bisa mengintegrasikan token dalam form sebagai hidden field
+	// Render reset password page with form
+	// You can embed the token in the form as a hidden field
 	htmlContent := `
 	<!DOCTYPE html>
 	<html lang="en">
@@ -439,26 +445,25 @@ func ResetPasswordForm(c *gin.Context) {
 	</html>
 	`
 
-	// Replace {{.Token}} dengan token yang sebenarnya
+	// Replace {{.Token}} with the actual token
 	finalHTML := strings.Replace(htmlContent, "{{.Token}}", tokenStr, 1)
 
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(finalHTML))
 }
 
-
 // ResetPassword handles resetting the user's password using the provided token (POST request)
 func ResetPassword(c *gin.Context) {
 	var req ResetPasswordFormRequest
-	// Bind form data ke struct
+	// Bind form data to struct
 	if err := c.ShouldBind(&req); err != nil {
-		// Render halaman gagal dengan pesan
+		// Render failure page with message
 		c.Data(http.StatusBadRequest, "text/html; charset=utf-8", []byte("<p>"+"Invalid input: "+err.Error()+"</p>"))
 		return
 	}
 
-	// Validasi bahwa password dan konfirmasi password cocok
+	// Validate that new_password and confirm_password match
 	if req.NewPassword != req.ConfirmPassword {
-		// Render halaman gagal dengan pesan
+		// Render failure page with message
 		c.Data(http.StatusBadRequest, "text/html; charset=utf-8", []byte("<p>Passwords do not match</p>"))
 		return
 	}
@@ -466,56 +471,53 @@ func ResetPassword(c *gin.Context) {
 	var token models.Token
 	if err := models.DB.Where("token = ? AND type = ?", req.Token, models.TokenTypePasswordReset).First(&token).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			// Render halaman gagal dengan pesan
+			// Render failure page with message
 			c.Data(http.StatusBadRequest, "text/html; charset=utf-8", []byte(failureHTML))
 			return
 		}
-		// Render halaman gagal dengan pesan generik
+		// Render generic failure page
 		c.Data(http.StatusInternalServerError, "text/html; charset=utf-8", []byte(failureHTML))
 		return
 	}
 
 	if token.ExpiresAt.Before(time.Now()) {
-		// Render halaman gagal dengan pesan token kedaluwarsa
+		// Render failure page with expired token message
 		c.Data(http.StatusBadRequest, "text/html; charset=utf-8", []byte(failureHTML))
 		return
 	}
 
 	var user models.User
 	if err := models.DB.First(&user, token.UserID).Error; err != nil {
-		// Render halaman gagal dengan pesan generik
+		// Render generic failure page
 		c.Data(http.StatusInternalServerError, "text/html; charset=utf-8", []byte(failureHTML))
 		return
 	}
 
-	// Hash password secara manual
+	// Manually hash the new password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
 	if err != nil {
-		// Render halaman gagal dengan pesan
+		// Render failure page with message
 		c.Data(http.StatusInternalServerError, "text/html; charset=utf-8", []byte(failureHTML))
 		return
 	}
 
-	// Update password dengan hash baru
+	// Update password with the new hashed password
 	user.Password = string(hashedPassword)
 
 	if err := models.DB.Save(&user).Error; err != nil {
-		// Render halaman gagal dengan pesan
+		// Render failure page with message
 		c.Data(http.StatusInternalServerError, "text/html; charset=utf-8", []byte(failureHTML))
 		return
 	}
 
 	// Delete the token after use
 	if err := models.DB.Delete(&token).Error; err != nil {
-		// Tidak mengembalikan error karena password sudah diubah
+		// Do not return error since password is already changed
 	}
 
-	// Render halaman sukses reset password
+	// Render password reset success page
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(successResetHTML))
 }
-
-
-
 
 // ResetPasswordAPI handles resetting the user's password via API (optional)
 func ResetPasswordAPI(c *gin.Context) {
@@ -580,23 +582,23 @@ const successVerifyHTML = `<!DOCTYPE html>
 	<title>Email Verification Successful</title>
 	<style>
 		body {
-			background-color: #d4edda; /* Latar belakang hijau muda */
+			background-color: #d4edda;
 			display: flex;
 			justify-content: center;
 			align-items: center;
-			height: 100vh; /* Tinggi penuh viewport */
+			height: 100vh;
 			font-family: Arial, sans-serif;
 			margin: 0;
 		}
 		.container {
-			background-color: #ffffff; /* Latar belakang putih */
+			background-color: #ffffff;
 			padding: 40px;
-			box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1); /* Bayangan lembut */
-			border-radius: 8px; /* Sudut membulat */
+			box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+			border-radius: 8px;
 			text-align: center;
 		}
 		.container h1 {
-			color: #155724; /* Warna hijau untuk judul */
+			color: #155724;
 			font-size: 2em;
 			margin-bottom: 20px;
 		}
@@ -606,7 +608,7 @@ const successVerifyHTML = `<!DOCTYPE html>
 			margin-bottom: 30px;
 		}
 		.container .btn {
-			background-color: #28a745; /* Tombol hijau */
+			background-color: #28a745;
 			color: #ffffff;
 			padding: 15px 30px;
 			text-decoration: none;
@@ -615,7 +617,7 @@ const successVerifyHTML = `<!DOCTYPE html>
 			transition: background-color 0.3s ease;
 		}
 		.container .btn:hover {
-			background-color: #218838; /* Warna hijau lebih gelap saat di-hover */
+			background-color: #218838;
 		}
 	</style>
 </head>
@@ -633,26 +635,26 @@ const failureHTML = `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Password Reset Failed</title>
+    <title>Operation Failed</title>
     <style>
         body {
-            background-color: #f8d7da; /* Latar belakang merah muda */
+            background-color: #f8d7da;
             display: flex;
             justify-content: center;
             align-items: center;
-            height: 100vh; /* Tinggi penuh viewport */
+            height: 100vh;
             font-family: Arial, sans-serif;
             margin: 0;
         }
         .content {
-            background-color: #ffffff; /* Latar belakang putih */
+            background-color: #ffffff;
             padding: 40px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1); /* Bayangan lembut */
-            border-radius: 8px; /* Sudut membulat */
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
             text-align: center;
         }
         .content h1 {
-            color: #721c24; /* Warna merah untuk judul */
+            color: #721c24;
             font-size: 2em;
             margin-bottom: 20px;
         }
@@ -662,7 +664,7 @@ const failureHTML = `<!DOCTYPE html>
             margin-bottom: 30px;
         }
         .content .btn {
-            background-color: #721c24; /* Tombol merah */
+            background-color: #721c24;
             color: #ffffff;
             padding: 15px 30px;
             text-decoration: none;
@@ -671,14 +673,14 @@ const failureHTML = `<!DOCTYPE html>
             transition: background-color 0.3s ease;
         }
         .content .btn:hover {
-            background-color: #5a1a1a; /* Warna merah lebih gelap saat di-hover */
+            background-color: #5a1a1a;
         }
     </style>
 </head>
 <body>
     <div class="content">
-        <h1>Password Reset Failed!</h1>
-        <p>We're sorry, but the password reset link is invalid or has expired. Please request a new one.</p>
+        <h1>Operation Failed!</h1>
+        <p>We're sorry, but the operation could not be completed. Please try again later.</p>
         <a href="/auth/request-password-reset" class="btn">Request New Reset Link</a>
     </div>
 </body>
@@ -692,23 +694,23 @@ const successResetHTML = `<!DOCTYPE html>
 	<title>Password Reset Successful</title>
 	<style>
 		body {
-			background-color: #d4edda; /* Latar belakang hijau muda */
+			background-color: #d4edda;
 			display: flex;
 			justify-content: center;
 			align-items: center;
-			height: 100vh; /* Tinggi penuh viewport */
+			height: 100vh;
 			font-family: Arial, sans-serif;
 			margin: 0;
 		}
 		.container {
-			background-color: #ffffff; /* Latar belakang putih */
+			background-color: #ffffff;
 			padding: 40px;
-			box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1); /* Bayangan lembut */
-			border-radius: 8px; /* Sudut membulat */
+			box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+			border-radius: 8px;
 			text-align: center;
 		}
 		.container h1 {
-			color: #155724; /* Warna hijau untuk judul */
+			color: #155724;
 			font-size: 2em;
 			margin-bottom: 20px;
 		}
@@ -718,7 +720,7 @@ const successResetHTML = `<!DOCTYPE html>
 			margin-bottom: 30px;
 		}
 		.container .btn {
-			background-color: #28a745; /* Tombol hijau */
+			background-color: #28a745;
 			color: #ffffff;
 			padding: 15px 30px;
 			text-decoration: none;
@@ -727,7 +729,7 @@ const successResetHTML = `<!DOCTYPE html>
 			transition: background-color 0.3s ease;
 		}
 		.container .btn:hover {
-			background-color: #218838; /* Warna hijau lebih gelap saat di-hover */
+			background-color: #218838;
 		}
 	</style>
 </head>
@@ -739,5 +741,3 @@ const successResetHTML = `<!DOCTYPE html>
 	</div>
 </body>
 </html>`
-
-

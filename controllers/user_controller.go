@@ -1,4 +1,3 @@
-// controllers/user_controller.go
 package controllers
 
 import (
@@ -14,7 +13,7 @@ import (
 
 // GetProfile handles retrieving the user's profile
 func GetProfile(c *gin.Context) {
-	// Ambil user_id dari context yang sudah di-set oleh AuthMiddleware
+	// Get user_id from context set by AuthMiddleware
 	userID, exists := c.Get("user_id")
 	if !exists {
 		utils.Logger.Warn("User ID not found in context")
@@ -23,7 +22,7 @@ func GetProfile(c *gin.Context) {
 	}
 
 	var user models.User
-	// Ambil data user dari database
+	// Retrieve user data from the database
 	if err := models.DB.First(&user, userID).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			utils.ErrorResponse(c, http.StatusNotFound, "User not found")
@@ -34,9 +33,10 @@ func GetProfile(c *gin.Context) {
 		return
 	}
 
-	// Siapkan data respons tanpa mengirimkan password
+	// Prepare response data without sending password
 	responseData := gin.H{
 		"id":                user.ID,
+		"username":          user.Username,
 		"email":             user.Email,
 		"role":              user.Role,
 		"is_email_verified": user.IsEmailVerified,
@@ -49,13 +49,14 @@ func GetProfile(c *gin.Context) {
 
 // UpdateProfileRequest represents the request structure for updating user profile
 type UpdateProfileRequest struct {
+	Username string `json:"username" binding:"omitempty"`
 	Email    string `json:"email" binding:"omitempty,email"`
 	Password string `json:"password" binding:"omitempty,min=6"`
 }
 
 // UpdateProfile handles updating the user's profile
 func UpdateProfile(c *gin.Context) {
-	// Ambil user_id dari context yang sudah di-set oleh AuthMiddleware
+	// Get user_id from context set by AuthMiddleware
 	userID, exists := c.Get("user_id")
 	if !exists {
 		utils.Logger.Warn("User ID not found in context")
@@ -64,20 +65,20 @@ func UpdateProfile(c *gin.Context) {
 	}
 
 	var req UpdateProfileRequest
-	// Bind JSON request ke struct
+	// Bind JSON request to struct
 	if err := c.ShouldBindJSON(&req); err != nil {
 		utils.ErrorResponse(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	// Jika tidak ada field yang diubah
-	if req.Email == "" && req.Password == "" {
+	// If no fields to update
+	if req.Username == "" && req.Email == "" && req.Password == "" {
 		utils.ErrorResponse(c, http.StatusBadRequest, "No fields to update")
 		return
 	}
 
 	var user models.User
-	// Ambil data user dari database
+	// Retrieve user data from the database
 	if err := models.DB.First(&user, userID).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			utils.ErrorResponse(c, http.StatusNotFound, "User not found")
@@ -88,21 +89,26 @@ func UpdateProfile(c *gin.Context) {
 		return
 	}
 
-	// Update email jika disediakan
+	// Update username if provided
+	if req.Username != "" && req.Username != user.Username {
+		user.Username = req.Username
+	}
+
+	// Update email if provided
 	if req.Email != "" && req.Email != user.Email {
 		user.Email = req.Email
-		user.IsEmailVerified = false // Tandai ulang verifikasi email
+		user.IsEmailVerified = false // Mark email as unverified
 	}
 
-	// Update password jika disediakan
+	// Update password if provided
 	if req.Password != "" {
-		user.Password = req.Password // Password akan di-hash oleh GORM hooks
+		user.Password = req.Password // Password will be hashed by GORM hooks
 	}
 
-	// Simpan perubahan ke database
+	// Save changes to the database
 	if err := models.DB.Save(&user).Error; err != nil {
 		if isUniqueConstraintError(err) {
-			utils.ErrorResponse(c, http.StatusConflict, "Email already exists")
+			utils.ErrorResponse(c, http.StatusConflict, "Email or username already exists")
 			return
 		}
 		utils.Logger.Errorf("Failed to update user profile: %v", err)
@@ -110,9 +116,9 @@ func UpdateProfile(c *gin.Context) {
 		return
 	}
 
-	// Jika email diubah, kirim email verifikasi ulang
+	// If email was changed, send verification email
 	if req.Email != "" && req.Email != user.Email {
-		// Buat token verifikasi email baru
+		// Create new email verification token
 		verifyToken, err := utils.GenerateRandomToken(32)
 		if err != nil {
 			utils.Logger.Errorf("Failed to generate verification token: %v", err)
@@ -124,7 +130,7 @@ func UpdateProfile(c *gin.Context) {
 			UserID:    user.ID,
 			Token:     verifyToken,
 			Type:      models.TokenTypeEmailVerify,
-			ExpiresAt: time.Now().Add(24 * time.Hour), // Token valid selama 24 jam
+			ExpiresAt: time.Now().Add(24 * time.Hour), // Token valid for 24 hours
 		}
 
 		if err := models.DB.Create(&emailToken).Error; err != nil {
@@ -133,7 +139,7 @@ func UpdateProfile(c *gin.Context) {
 			return
 		}
 
-		// Kirim email verifikasi baru
+		// Send new verification email
 		emailService := utils.NewEmailService()
 		if err := emailService.SendVerificationEmail(user.Email, verifyToken); err != nil {
 			utils.Logger.Errorf("Failed to send verification email: %v", err)
@@ -146,9 +152,10 @@ func UpdateProfile(c *gin.Context) {
 
 	utils.Logger.Infof("User profile updated successfully: UserID %d", user.ID)
 
-	// Siapkan data respons tanpa mengirimkan password
+	// Prepare response data without sending password
 	responseData := gin.H{
 		"id":                user.ID,
+		"username":          user.Username,
 		"email":             user.Email,
 		"role":              user.Role,
 		"is_email_verified": user.IsEmailVerified,
@@ -161,7 +168,7 @@ func UpdateProfile(c *gin.Context) {
 
 // DeleteProfile handles deleting the user's account (Optional)
 func DeleteProfile(c *gin.Context) {
-	// Ambil user_id dari context yang sudah di-set oleh AuthMiddleware
+	// Get user_id from context set by AuthMiddleware
 	userID, exists := c.Get("user_id")
 	if !exists {
 		utils.Logger.Warn("User ID not found in context")
@@ -170,7 +177,7 @@ func DeleteProfile(c *gin.Context) {
 	}
 
 	var user models.User
-	// Ambil data user dari database
+	// Retrieve user data from the database
 	if err := models.DB.First(&user, userID).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			utils.ErrorResponse(c, http.StatusNotFound, "User not found")
@@ -181,7 +188,7 @@ func DeleteProfile(c *gin.Context) {
 		return
 	}
 
-	// Hapus user dari database (soft delete jika menggunakan gorm.DeletedAt)
+	// Delete user from the database (soft delete if using gorm.DeletedAt)
 	if err := models.DB.Delete(&user).Error; err != nil {
 		utils.Logger.Errorf("Failed to delete user: %v", err)
 		utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to delete account")
@@ -190,17 +197,17 @@ func DeleteProfile(c *gin.Context) {
 
 	utils.Logger.Infof("User account deleted successfully: UserID %d", user.ID)
 
-	// Kirim respons sukses
+	// Send success response
 	utils.SuccessResponse(c, gin.H{"message": "Account deleted successfully"})
 }
 
-// isUniqueConstraintError memeriksa apakah error berasal dari pelanggaran unique constraint PostgreSQL
+// isUniqueConstraintError checks if an error is due to a unique constraint violation in PostgreSQL
 func isUniqueConstraintError(err error) bool {
-    if err == nil {
-        return false
-    }
-    if pqErr, ok := err.(*pq.Error); ok {
-        return pqErr.Code == "23505"
-    }
-    return false
+	if err == nil {
+		return false
+	}
+	if pqErr, ok := err.(*pq.Error); ok {
+		return pqErr.Code == "23505"
+	}
+	return false
 }
