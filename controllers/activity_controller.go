@@ -25,84 +25,97 @@ type UpdateActivityRequest struct {
 }
 
 // CreateActivity handles the creation of a new activity within a project
+// CreateActivity handles the creation of a new activity within a project
 func CreateActivity(c *gin.Context) {
-	// Ambil user_id dari context yang sudah di-set oleh AuthMiddleware
-	userID, exists := c.Get("user_id")
-	if !exists {
-		utils.Logger.Warn("User ID not found in context")
-		utils.ErrorResponse(c, http.StatusInternalServerError, "User ID not found")
-		return
-	}
+    // Ambil user_id dari context yang sudah di-set oleh AuthMiddleware
+    userID, exists := c.Get("user_id")
+    if !exists {
+        utils.Logger.Warn("User ID not found in context")
+        utils.ErrorResponse(c, http.StatusInternalServerError, "User ID not found")
+        return
+    }
 
-	// Ambil parameter project_id dari URL
-	projectIDParam := c.Param("project_id")
-	projectID, err := strconv.Atoi(projectIDParam)
-	if err != nil {
-		utils.ErrorResponse(c, http.StatusBadRequest, "Invalid project ID")
-		return
-	}
+    userIDUint, ok := userID.(uint)
+    if !ok {
+        utils.Logger.Warn("User ID has invalid type")
+        utils.ErrorResponse(c, http.StatusInternalServerError, "Invalid user ID type")
+        return
+    }
 
-	// Cek apakah proyek ada dan pengguna memiliki akses (pemilik atau kolaborator)
-	var project models.Project
-	if err := models.DB.First(&project, projectID).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			utils.ErrorResponse(c, http.StatusNotFound, "Project not found")
-			return
-		}
-		utils.Logger.Errorf("Failed to retrieve project: %v", err)
-		utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve project")
-		return
-	}
+    utils.Logger.Infof("Creating activity for user_id: %d", userIDUint)
 
-	// Cek akses pengguna ke proyek
-	if project.OwnerID != userID.(uint) {
-		var collaboration models.Collaboration
-		if err := models.DB.Where("project_id = ? AND user_id = ?", project.ID, userID.(uint)).First(&collaboration).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
-				utils.ErrorResponse(c, http.StatusForbidden, "You do not have access to this project")
-				return
-			}
-			utils.Logger.Errorf("Failed to check collaboration: %v", err)
-			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to check access permissions")
-			return
-		}
-	}
+    // Ambil parameter project_id dari URL
+    projectIDParam := c.Param("project_id")
+    projectID, err := strconv.Atoi(projectIDParam)
+    if err != nil {
+        utils.ErrorResponse(c, http.StatusBadRequest, "Invalid project ID")
+        return
+    }
 
-	var req CreateActivityRequest
-	// Bind JSON request ke struct
-	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.ErrorResponse(c, http.StatusBadRequest, err.Error())
-		return
-	}
+    // Cek apakah proyek ada dan pengguna memiliki akses (pemilik atau kolaborator)
+    var project models.Project
+    if err := models.DB.First(&project, projectID).Error; err != nil {
+        if err == gorm.ErrRecordNotFound {
+            utils.ErrorResponse(c, http.StatusNotFound, "Project not found")
+            return
+        }
+        utils.Logger.Errorf("Failed to retrieve project: %v", err)
+        utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve project")
+        return
+    }
 
-	// Buat instance Activity baru
-	activity := models.Activity{
-		ProjectID:   uint(projectID),
-		Description: req.Description,
-		Type:        req.Type,
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
-	}
+    // Cek akses pengguna ke proyek
+    if project.OwnerID != userIDUint {
+        var collaboration models.Collaboration
+        if err := models.DB.Where("project_id = ? AND user_id = ?", project.ID, userIDUint).First(&collaboration).Error; err != nil {
+            if err == gorm.ErrRecordNotFound {
+                utils.ErrorResponse(c, http.StatusForbidden, "You do not have access to this project")
+                return
+            }
+            utils.Logger.Errorf("Failed to check collaboration: %v", err)
+            utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to check access permissions")
+            return
+        }
+    }
 
-	// Simpan activity ke database
-	if err := models.DB.Create(&activity).Error; err != nil {
-		utils.Logger.Errorf("Failed to create activity: %v", err)
-		utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to create activity")
-		return
-	}
+    var req CreateActivityRequest
+    // Bind JSON request ke struct
+    if err := c.ShouldBindJSON(&req); err != nil {
+        utils.ErrorResponse(c, http.StatusBadRequest, err.Error())
+        return
+    }
 
-	utils.Logger.Infof("Activity created successfully: ActivityID %d in ProjectID %d", activity.ID, project.ID)
+    // Buat instance Activity baru dengan UserID yang benar
+    activity := models.Activity{
+        ProjectID:   uint(projectID),
+        Description: req.Description,
+        Type:        req.Type,
+        UserID:      userIDUint, // Atur UserID di sini
+        CreatedAt:   time.Now(),
+        UpdatedAt:   time.Now(),
+    }
 
-	// Kirim respons sukses dengan data activity
-	utils.CreatedResponse(c, gin.H{
-		"id":          activity.ID,
-		"project_id":  activity.ProjectID,
-		"description": activity.Description,
-		"type":        activity.Type,
-		"created_at":  activity.CreatedAt,
-		"updated_at":  activity.UpdatedAt,
-	})
+    // Simpan activity ke database
+    if err := models.DB.Create(&activity).Error; err != nil {
+        utils.Logger.Errorf("Failed to create activity: %v", err)
+        utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to create activity")
+        return
+    }
+
+    utils.Logger.Infof("Activity created successfully: ActivityID %d in ProjectID %d by UserID %d", activity.ID, project.ID, userIDUint)
+
+    // Kirim respons sukses dengan data activity
+    utils.CreatedResponse(c, gin.H{
+        "id":          activity.ID,
+        "project_id":  activity.ProjectID,
+        "description": activity.Description,
+        "type":        activity.Type,
+        "user_id":     activity.UserID, // Sertakan UserID dalam respons
+        "created_at":  activity.CreatedAt,
+        "updated_at":  activity.UpdatedAt,
+    })
 }
+
 
 // ListActivities handles retrieving all activities within a project
 func ListActivities(c *gin.Context) {

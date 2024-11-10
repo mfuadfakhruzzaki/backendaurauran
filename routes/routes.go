@@ -5,6 +5,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/mfuadfakhruzzaki/backendaurauran/controllers"
 	"github.com/mfuadfakhruzzaki/backendaurauran/middlewares"
+	"github.com/mfuadfakhruzzaki/backendaurauran/models"
 	"github.com/mfuadfakhruzzaki/backendaurauran/storage"
 	"gorm.io/gorm"
 )
@@ -51,7 +52,7 @@ func SetupRouter(db *gorm.DB, storageService storage.StorageService, bucketName 
 		// Project routes
 		project := protected.Group("/projects")
 		{
-			project.POST("/", controllers.CreateProject)
+			project.POST("/", middlewares.RoleMiddleware(models.RoleAdmin, models.RoleManager), controllers.CreateProject)
 			project.GET("/", controllers.ListProjects)
 			project.GET("/:project_id", controllers.GetProject)
 			project.PUT("/:project_id", controllers.UpdateProject)
