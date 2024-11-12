@@ -11,7 +11,7 @@ import (
 // CORSMiddleware mengatur CORS untuk aplikasi
 func CORSMiddleware() gin.HandlerFunc {
     configCORS := cors.Config{
-        AllowOrigins:     []string{"*"}, // Ganti dengan domain yang diizinkan di produksi
+        AllowOrigins:     []string{"http://localhost:5173, https://zacht.tech"}, // Ganti dengan domain yang diizinkan di produksi
         AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
         AllowHeaders:     []string{"Origin", "Authorization", "Content-Type", "Accept"},
         ExposeHeaders:    []string{"Content-Length"},

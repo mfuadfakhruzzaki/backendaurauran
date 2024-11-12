@@ -1,83 +1,556 @@
-# Backend Aurauran
+# API Documentation
 
-Backend Aurauran adalah aplikasi backend yang dibangun dengan Go dan framework Gin. Aplikasi ini menyediakan API untuk autentikasi pengguna, manajemen proyek, dan sumber daya terkait proyek.
+## Base URL (`https://api.zacht.tech`)
 
-## Ringkasan Endpoint
+## General Notes
 
-### Autentikasi
+Dibuat dengan Go dan menggunakan framework Gin. Semua request dan response body menggunakan format JSON.
 
-- **POST /auth/register** - Mendaftarkan pengguna baru.
-- **POST /auth/login** - Login pengguna.
-- **POST /auth/logout** - Logout pengguna.
-- **GET /auth/verify-email** - Verifikasi email pengguna.
-- **POST /auth/request-password-reset** - Meminta reset kata sandi.
-- **POST /auth/reset-password** - Reset kata sandi pengguna.
-- **GET /auth/reset-password** - Menampilkan formulir reset kata sandi.
-- **POST /auth/reset-password-api** - Reset kata sandi melalui API.
+Otentikasi menggunakan JWT. Setiap request yang memerlukan otentikasi harus menyertakan header `Authorization : Bearer <token>`.
 
-### Pengguna
+Format API menggunakan RESTful API.
 
-- **GET /users/profile** - Mendapatkan profil pengguna.
-- **PUT /users/profile** - Memperbarui profil pengguna.
-- **DELETE /users/profile** - Menghapus profil pengguna.
+Dibuat oleh Kelompok 1 Mata Kuliah Pemrograman Berbasis Objek.
 
-### Proyek
+Anggota Kelompok:
 
-- **POST /projects/** - Membuat proyek baru.
-- **GET /projects/** - Mendapatkan daftar proyek.
-- **GET /projects/:project_id** - Mendapatkan detail proyek.
-- **PUT /projects/:project_id** - Memperbarui proyek.
-- **DELETE /projects/:project_id** - Menghapus proyek.
+- Muhammad Fuad Fakhruzzaki `(21120122130052)`
+- Firman Gani Heriansyah `(21120122130043)`
+- Raditya Wisnu Cahyo Nugroho `(21120122130039)`
+- Rizky Dhafin Almansyah `(21120122120027)`
+- Farel Dewangga Rabani `(21120122130037)`
 
-#### Kolaborator
+## Auth Routes (`/auth`)
 
-- **POST /projects/:project_id/collaborators/** - Menambahkan kolaborator.
-- **GET /projects/:project_id/collaborators/** - Mendapatkan daftar kolaborator.
-- **PUT /projects/:project_id/collaborators/:collaborator_id** - Memperbarui peran kolaborator.
-- **DELETE /projects/:project_id/collaborators/:collaborator_id** - Menghapus kolaborator.
+### POST `/auth/register`
 
-#### Aktivitas
+- **Method:** `POST`
+- **Headers:**
+  - `Content-Type: application/json`
+- **Request Body:**
+  ```json
+  {
+    "username": "string",
+    "email": "user@example.com",
+    "password": "string",
+    "invitation_code": "string" // Optional
+  }
+  ```
 
-- **POST /projects/:project_id/activities/** - Membuat aktivitas.
-- **GET /projects/:project_id/activities/** - Mendapatkan daftar aktivitas.
-- **GET /projects/:project_id/activities/:id** - Mendapatkan detail aktivitas.
-- **PUT /projects/:project_id/activities/:id** - Memperbarui aktivitas.
-- **DELETE /projects/:project_id/activities/:id** - Menghapus aktivitas.
+### POST /auth/login
 
-#### Tugas
+- **Method:** `POST`
+- **Headers:**
+  - `Content-Type: application/json`
+- **Request Body:**
+  ```json
+  {
+    "email": "user@example.com",
+    "password": "string"
+  }
+  ```
 
-- **POST /projects/:project_id/tasks/** - Membuat tugas.
-- **GET /projects/:project_id/tasks/** - Mendapatkan daftar tugas.
-- **GET /projects/:project_id/tasks/:id** - Mendapatkan detail tugas.
-- **PUT /projects/:project_id/tasks/:id** - Memperbarui tugas.
-- **DELETE /projects/:project_id/tasks/:id** - Menghapus tugas.
+### POST /auth/logout
 
-#### Catatan
+- **Method:** `POST`
+- **Headers:**
+  - `Authorization: Bearer <token>`
 
-- **POST /projects/:project_id/notes/** - Membuat catatan.
-- **GET /projects/:project_id/notes/** - Mendapatkan daftar catatan.
-- **GET /projects/:project_id/notes/:id** - Mendapatkan detail catatan.
-- **PUT /projects/:project_id/notes/:id** - Memperbarui catatan.
-- **DELETE /projects/:project_id/notes/:id** - Menghapus catatan.
+### GET /auth/verify-email
 
-#### Berkas
+- **Method:** `GET`
+- **Headers:**
+  none
+- **Query Parameters:**
+  - `token`: string
 
-- **POST /projects/:project_id/files/** - Mengunggah berkas.
-- **GET /projects/:project_id/files/** - Mendapatkan daftar berkas.
-- **GET /projects/:project_id/files/:id** - Mengunduh berkas.
-- **DELETE /projects/:project_id/files/:id** - Menghapus berkas.
+### POST /auth/request-password-reset
 
-#### Notifikasi
+- **Method:** `POST`
+- **Headers:**
+  - `Content-Type: application/json`
+- **Request Body:**
 
-- **POST /projects/:project_id/notifications/** - Membuat notifikasi.
-- **GET /projects/:project_id/notifications/** - Mendapatkan daftar notifikasi.
-- **GET /projects/:project_id/notifications/:id** - Mendapatkan detail notifikasi.
-- **PUT /projects/:project_id/notifications/:id** - Memperbarui notifikasi.
-- **DELETE /projects/:project_id/notifications/:id** - Menghapus notifikasi.
+  ```json
+  {
+    "email": "user@example.com"
+  }
+  ```
 
----
+### GET /auth/reset-password
 
-**Catatan:** Semua endpoint di bawah path `/projects/` dilindungi dan memerlukan autentikasi. Anda harus menyertakan token autentikasi dalam permintaan Anda.
+- **Method:** `GET`
+- **Headers:**
+  none
+- **Query Parameters:**
+  - `token`: string
 
----
+### POST /auth/reset-password
 
+- **Method:** `POST`
+- **Headers:**
+  - `Content-Type: multipart/form-data`
+- **Request Body:**
+
+  ```json
+  {
+    "token": "string",
+    "new_password": "string",
+    "confirm_password": "string"
+  }
+  ```
+
+### POST /auth/reset-password-api
+
+- **Method:** `POST`
+- **Headers:**
+  - `Content-Type: application/json`
+- **Request Body:**
+
+  ```json
+  {
+    "token": "string",
+    "new_password": "string"
+  }
+  ```
+
+## User Routes (`/user`)
+
+### GET /users/profile
+
+- **Method:** `GET`
+- **Headers:**
+  - `Authorization: Bearer <token>`
+
+### PUT /users/profile
+
+- **Method:** `PUT`
+- **Headers:**
+  - `Authorization: Bearer <token>`
+  - `Content-Type: application/json`
+- **Request Body:**
+
+  ```json
+  {
+    "username": "new_username", // Optional
+    "email": "new.email@example.com", // Optional
+    "password": "newPassword123" // Optional
+  }
+  ```
+
+### DELETE /users/profile
+
+- **Method:** `DELETE`
+- **Headers:**
+  - `Authorization: Bearer <token>`
+
+## Project Routes (`/projects`)
+
+### POST /projects
+
+- **Method:** `POST`
+- **Headers:**
+  - `Authorization: Bearer <token>`
+  - `Content-Type: application/json`
+- **Request Body:**
+
+  ```json
+  {
+    "name": "string",
+    "description": "string" // Optional
+  }
+  ```
+
+### GET /projects
+
+- **Method:** `GET`
+- **Headers:**
+  - `Authorization: Bearer <token>`
+
+### GET /projects/:id
+
+- **Method:** `GET`
+- **Headers:**
+  - `Authorization: Bearer <token>`
+- **Path Parameters:**
+  - `project_id`: integer
+
+### PUT /projects/:id
+
+- **Method:** `PUT`
+- **Headers:**
+  - `Authorization: Bearer <token>`
+  - `Content-Type: application/json`
+- **Path Parameters:**
+  - `project_id`: integer
+- **Request Body:**
+
+  ```json
+  {
+    "name": "string", // Optional
+    "description": "string" // Optional
+  }
+  ```
+
+### DELETE /projects/:id
+
+- **Method:** `DELETE`
+- **Headers:**
+  - `Authorization: Bearer <token>`
+- **Path Parameters:**
+  - `project_id`: integer
+
+## Task Routes (`/projects/:project_id/tasks`)
+
+### POST /projects/:project_id/tasks
+
+- **Method:** `POST`
+- **Headers:**
+  - `Authorization: Bearer <token>`
+  - `Content-Type: application/json`
+- **Path Parameters:**
+  - `project_id`: integer
+- **Request Body:**
+
+  ```json
+  {
+  "title": "string",
+  "description": "string",
+  "priority": "low" | "medium" | "high",
+  "status": "pending" | "in_progress" | "completed" | "cancelled",
+  "deadline": "2024-12-31T23:59:59Z", // Optional (ISO 8601 format)
+  "assigned_to": 1                    // Optional (User ID)
+  }
+  ```
+
+### GET /projects/:project_id/tasks
+
+- **Method:** `GET`
+- **Headers:**
+  - `Authorization: Bearer <token>`
+- **Path Parameters:**
+  - `project_id`: integer
+
+### GET /projects/:project_id/tasks/:task_id
+
+- **Method:** `GET`
+- **Headers:**
+  - `Authorization: Bearer <token>`
+- **Path Parameters:**
+  - `project_id`: integer
+  - `task_id`: integer
+
+### PUT /projects/:project_id/tasks/:task_id
+
+- **Method:** `PUT`
+- **Headers:**
+  - `Authorization: Bearer <token>`
+  - `Content-Type: application/json`
+- **Path Parameters:**
+  - `project_id`: integer
+  - `task_id`: integer
+- **Request Body:**
+
+  ```json
+  {
+  "title": "string",               // Optional
+  "description": "string",         // Optional
+  "priority": "low" | "medium" | "high",    // Optional
+  "status": "pending" | "in_progress" | "completed" | "cancelled", // Optional
+  "deadline": "2024-12-31T23:59:59Z",     // Optional (ISO 8601 format)
+  "assigned_to": 2                    // Optional (User ID)
+  }
+  ```
+
+### DELETE /projects/:project_id/tasks/:task_id
+
+- **Method:** `DELETE`
+- **Headers:**
+  - `Authorization: Bearer <token>`
+- **Path Parameters:**
+  - `project_id`: integer
+  - `task_id`: integer
+
+## Collaboration Routes (`/projects/:project_id/collaborators`)
+
+### POST /projects/:project_id/collaborators
+
+- **Method:** `POST`
+- **Headers:**
+  - `Authorization: Bearer <token>`
+  - `Content-Type: application/json`
+- **Path Parameters:**
+  - `project_id`: integer
+- **Request Body:**
+
+  ```json
+  {
+  "user_id": 1,
+  "role": "admin" | "collaborator"
+  }
+  ```
+
+### GET /projects/:project_id/collaborators
+
+- **Method:** `GET`
+- **Headers:**
+  - `Authorization: Bearer <token>`
+- **Path Parameters:**
+  - `project_id`: integer
+
+### PUT /projects/:project_id/collaborators/:collaborator_id
+
+- **Method:** `PUT`
+- **Headers:**
+  - `Authorization: Bearer <token>`
+  - `Content-Type: application/json`
+- **Path Parameters:**
+  - `project_id`: integer
+  - `collaborator_id`: integer
+- **Request Body:**
+
+  ```json
+  {
+  "role": "admin" | "collaborator"
+  }
+  ```
+
+### DELETE /projects/:project_id/collaborators/:collaborator_id
+
+- **Method:** `DELETE`
+- **Headers:**
+  - `Authorization: Bearer <token>`
+- **Path Parameters:**
+  - `project_id`: integer
+  - `collaborator_id`: integer
+
+## Note Routes (`/projects/:project_id/notes`)
+
+### POST /projects/:project_id/notes
+
+- **Method:** `POST`
+- **Headers:**
+  - `Authorization: Bearer <token>`
+  - `Content-Type: application/json`
+- **Path Parameters:**
+  - `project_id`: integer
+- **Request Body:**
+
+  ```json
+  {
+    "content": "string"
+  }
+  ```
+
+### GET /projects/:project_id/notes
+
+- **Method:** `GET`
+- **Headers:**
+  - `Authorization: Bearer <token>`
+- **Path Parameters:**
+  - `project_id`: integer
+
+### GET /projects/:project_id/notes/:note_id
+
+- **Method:** `GET`
+- **Headers:**
+  - `Authorization: Bearer <token>`
+- **Path Parameters:**
+  - `project_id`: integer
+  - `note_id`: integer
+
+### PUT /projects/:project_id/notes/:note_id
+
+- **Method:** `PUT`
+- **Headers:**
+  - `Authorization: Bearer <token>`
+  - `Content-Type: application/json`
+- **Path Parameters:**
+  - `project_id`: integer
+  - `note_id`: integer
+- **Request Body:**
+
+  ```json
+  {
+    "content": "string" // Optional
+  }
+  ```
+
+### DELETE /projects/:project_id/notes/:note_id
+
+- **Method:** `DELETE`
+- **Headers:**
+  - `Authorization: Bearer <token>`
+- **Path Parameters:**
+  - `project_id`: integer
+  - `note_id`: integer
+
+## Activity Routes (`/projects/:project_id/activities`)
+
+### POST /projects/:project_id/activities
+
+- **Method:** `POST`
+- **Headers:**
+  - `Authorization: Bearer <token>`
+  - `Content-Type: application/json`
+- **Path Parameters:**
+  - `project_id`: integer
+- **Request Body:**
+
+  ```json
+  {
+  "description": "string",
+  "type": "task" | "event" | "milestone"
+  }
+  ```
+
+### GET /projects/:project_id/activities
+
+- **Method:** `GET`
+- **Headers:**
+  - `Authorization: Bearer <token>`
+- **Path Parameters:**
+  - `project_id`: integer
+
+### GET /projects/:project_id/activities/:activity_id
+
+- **Method:** `GET`
+- **Headers:**
+  - `Authorization: Bearer <token>`
+- **Path Parameters:**
+  - `project_id`: integer
+  - `activity_id`: integer
+
+### PUT /projects/:project_id/activities/:activity_id
+
+- **Method:** `PUT`
+- **Headers:**
+  - `Authorization: Bearer <token>`
+  - `Content-Type: application/json`
+- **Path Parameters:**
+  - `project_id`: integer
+  - `activity_id`: integer
+- **Request Body:**
+
+  ```json
+  {
+  "description": "string", // Optional
+  "type": "task" | "event" | "milestone" // Optional
+  }
+  ```
+
+### DELETE /projects/:project_id/activities/:activity_id
+
+- **Method:** `DELETE`
+- **Headers:**
+  - `Authorization: Bearer <token>`
+- **Path Parameters:**
+  - `project_id`: integer
+  - `activity_id`: integer
+
+## File Routes (`/projects/:project_id/files`)
+
+### POST /projects/:project_id/files
+
+- **Method:** `POST`
+- **Headers:**
+  - `Authorization: Bearer <token>`
+  - `Content-Type: multipart/form-data`
+- **Path Parameters:**
+  - `project_id`: integer
+- **Request Body:**
+  - from Data Field: `file` (File)
+- Description: Mengupload file ke Google Cloud Storage dan menyimpan metadata file ke database. Hanya tipe file yang diizinkan (misalnya gambar) dan ukuran maksimal 5MB yang diterima.
+
+### GET /projects/:project_id/files
+
+- **Method:** `GET`
+- **Headers:**
+  - `Authorization: Bearer <token>`
+- **Path Parameters:**
+  - `project_id`: integer
+
+### GET /projects/:project_id/files/:file_id
+
+- **Method:** `GET`
+- **Headers:**
+  - `Authorization: Bearer <token>`
+- **Path Parameters:**
+  - `project_id`: integer
+  - `file_id`: integer
+
+### DELETE /projects/:project_id/files/:file_id
+
+- **Method:** `DELETE`
+- **Headers:**
+  - `Authorization: Bearer <token>`
+- **Path Parameters:**
+  - `project_id`: integer
+  - `file_id`: integer
+
+## Notification Routes (`/projects/:project_id/notifications`)
+
+### POST /projects/:project_id/notifications
+
+- **Method:** `POST`
+- **Headers:**
+  - `Authorization: Bearer <token>`
+  - `Content-Type: application/json`
+- **Path Parameters:**
+  - `project_id`: integer
+- **Request Body:**
+
+  ```json
+  {
+  "user_id": 1,
+  "content": "Your task has been updated.",
+  "type": "info" | "warning" | "error" | "success",
+  "project_id": 2, // Optional
+  "is_read": false   // Optional, default false
+  }
+  ```
+
+### GET /projects/:project_id/notifications
+
+- **Method:** `GET`
+- **Headers:**
+  - `Authorization: Bearer <token>`
+- **Path Parameters:**
+  - `project_id`: integer
+
+### GET /projects/:project_id/notifications/:notification_id
+
+- **Method:** `GET`
+- **Headers:**
+  - `Authorization: Bearer <token>`
+- **Path Parameters:**
+  - `project_id`: integer
+  - `notification_id`: integer
+
+### PUT /projects/:project_id/notifications/:notification_id
+
+- **Method:** `PUT`
+- **Headers:**
+  - `Authorization: Bearer <token>`
+  - `Content-Type: application/json`
+- **Path Parameters:**
+  - `project_id`: integer
+  - `notification_id`: integer
+- **Request Body:**
+
+  ```json
+  {
+  "content": "string",          // Optional
+  "type": "info" | "warning" | "error" | "success", // Optional
+  "is_read": true               // Optional
+  }
+  ```
+
+### DELETE /projects/:project_id/notifications/:notification_id
+
+- **Method:** `DELETE`
+- **Headers:**
+  - `Authorization: Bearer <token>`
+- **Path Parameters:**
+  - `project_id`: integer
+  - `notification_id`: integer
