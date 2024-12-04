@@ -2,47 +2,45 @@
 
 ## Base URL (`https://api.zacht.tech`)
 
-## General Notes
+### General Notes
 
-Dibuat dengan Go dan menggunakan framework Gin. Semua request dan response body menggunakan format JSON.
+- API dibuat menggunakan Go dan framework Gin.
+- Semua request dan response body menggunakan format JSON.
+- Otentikasi menggunakan JWT. Tambahkan header berikut untuk request yang membutuhkan otentikasi:
+  ```
+  Authorization: Bearer <token>
+  ```
+- Format API menggunakan RESTful.
+- Dokumentasi ini disusun oleh Kelompok 1 dari Mata Kuliah Pemrograman Berbasis Objek.
 
-Otentikasi menggunakan JWT. Setiap request yang memerlukan otentikasi harus menyertakan header `Authorization : Bearer <token>`.
-
-Format API menggunakan RESTful API.
-
-Dibuat oleh Kelompok 1 Mata Kuliah Pemrograman Berbasis Objek.
-
-Anggota Kelompok:
-
+### Anggota Kelompok
 - Muhammad Fuad Fakhruzzaki `(21120122130052)`
 - Firman Gani Heriansyah `(21120122130043)`
 - Raditya Wisnu Cahyo Nugroho `(21120122130039)`
 - Rizky Dhafin Almansyah `(21120122120027)`
 - Farel Dewangga Rabani `(21120122130037)`
 
-## Auth Routes (`/auth`)
+---
 
-### POST `/auth/register`
+## Endpoints
 
-- **Method:** `POST`
-- **Headers:**
-  - `Content-Type: application/json`
-- **Request Body:**
+### 1. **Auth Routes**
+
+#### POST `/auth/register`
+- **Headers:** `Content-Type: application/json`
+- **Body:**
   ```json
   {
-    "username": "string",
+    "username": "zacht",
     "email": "user@example.com",
     "password": "string",
-    "invitation_code": "string" // Optional
+    "invitation_code": "optional"
   }
   ```
 
-### POST /auth/login
-
-- **Method:** `POST`
-- **Headers:**
-  - `Content-Type: application/json`
-- **Request Body:**
+#### POST `/auth/login`
+- **Headers:** `Content-Type: application/json`
+- **Body:**
   ```json
   {
     "email": "user@example.com",
@@ -50,507 +48,132 @@ Anggota Kelompok:
   }
   ```
 
-### POST /auth/logout
+#### POST `/auth/logout`
+- **Headers:** `Authorization: Bearer <token>`
 
-- **Method:** `POST`
-- **Headers:**
-  - `Authorization: Bearer <token>`
-
-### GET /auth/verify-email
-
-- **Method:** `GET`
-- **Headers:**
-  none
-- **Query Parameters:**
+#### GET `/auth/verify-email`
+- **Query Parameter:**
   - `token`: string
 
-### POST /auth/request-password-reset
-
-- **Method:** `POST`
-- **Headers:**
-  - `Content-Type: application/json`
-- **Request Body:**
-
+#### POST `/auth/request-password-reset`
+- **Headers:** `Content-Type: application/json`
+- **Body:**
   ```json
   {
     "email": "user@example.com"
   }
   ```
 
-### GET /auth/reset-password
-
-- **Method:** `GET`
-- **Headers:**
-  none
-- **Query Parameters:**
-  - `token`: string
-
-### POST /auth/reset-password
-
-- **Method:** `POST`
-- **Headers:**
-  - `Content-Type: multipart/form-data`
-- **Request Body:**
-
+#### POST `/auth/reset-password`
+- **Headers:** `Content-Type: application/json`
+- **Body:**
   ```json
   {
-    "token": "string",
-    "new_password": "string",
-    "confirm_password": "string"
-  }
-  ```
-
-### POST /auth/reset-password-api
-
-- **Method:** `POST`
-- **Headers:**
-  - `Content-Type: application/json`
-- **Request Body:**
-
-  ```json
-  {
-    "token": "string",
+    "token": "reset_token",
     "new_password": "string"
   }
   ```
 
-## User Routes (`/user`)
+---
 
-### GET /users/profile
+### 2. **User Routes**
 
-- **Method:** `GET`
-- **Headers:**
-  - `Authorization: Bearer <token>`
+#### GET `/users/profile`
+- **Headers:** `Authorization: Bearer <token>`
 
-### PUT /users/profile
-
-- **Method:** `PUT`
+#### PUT `/users/profile`
 - **Headers:**
   - `Authorization: Bearer <token>`
   - `Content-Type: application/json`
-- **Request Body:**
-
+- **Body:**
   ```json
   {
-    "username": "new_username", // Optional
-    "email": "new.email@example.com", // Optional
-    "password": "newPassword123" // Optional
+    "username": "new_username",
+    "email": "new.email@example.com",
+    "password": "newPassword123"
   }
   ```
 
-### DELETE /users/profile
+#### DELETE `/users/profile`
+- **Headers:** `Authorization: Bearer <token>`
 
-- **Method:** `DELETE`
-- **Headers:**
-  - `Authorization: Bearer <token>`
+---
 
-## Project Routes (`/projects`)
+### 3. **Project Routes**
 
-### POST /projects
-
-- **Method:** `POST`
+#### POST `/projects`
 - **Headers:**
   - `Authorization: Bearer <token>`
   - `Content-Type: application/json`
-- **Request Body:**
-
+- **Body:**
   ```json
   {
-    "name": "string",
-    "description": "string" // Optional
+    "title": "Project Title",
+    "description": "Description",
+    "priority": "Medium",
+    "deadline": "2024-12-31T23:59:59Z",
+    "status": "Pending"
   }
   ```
 
-### GET /projects
+#### GET `/projects`
+- **Headers:** `Authorization: Bearer <token>`
 
-- **Method:** `GET`
-- **Headers:**
-  - `Authorization: Bearer <token>`
+#### GET `/projects/:id`
+- **Headers:** `Authorization: Bearer <token>`
 
-### GET /projects/:id
-
-- **Method:** `GET`
-- **Headers:**
-  - `Authorization: Bearer <token>`
-- **Path Parameters:**
-  - `project_id`: integer
-
-### PUT /projects/:id
-
-- **Method:** `PUT`
+#### PUT `/projects/:id`
 - **Headers:**
   - `Authorization: Bearer <token>`
   - `Content-Type: application/json`
-- **Path Parameters:**
-  - `project_id`: integer
-- **Request Body:**
-
+- **Body:**
   ```json
   {
-    "name": "string", // Optional
-    "description": "string" // Optional
+    "title": "Updated Title",
+    "description": "Updated Description"
   }
   ```
 
-### DELETE /projects/:id
+#### DELETE `/projects/:id`
+- **Headers:** `Authorization: Bearer <token>`
 
-- **Method:** `DELETE`
-- **Headers:**
-  - `Authorization: Bearer <token>`
-- **Path Parameters:**
-  - `project_id`: integer
+---
 
-## Task Routes (`/projects/:project_id/tasks`)
+### 4. **Task Routes**
 
-### POST /projects/:project_id/tasks
-
-- **Method:** `POST`
+#### POST `/projects/:project_id/tasks`
 - **Headers:**
   - `Authorization: Bearer <token>`
   - `Content-Type: application/json`
-- **Path Parameters:**
-  - `project_id`: integer
-- **Request Body:**
-
+- **Body:**
   ```json
   {
-  "title": "string",
-  "description": "string",
-  "priority": "low" | "medium" | "high",
-  "status": "pending" | "in_progress" | "completed" | "cancelled",
-  "deadline": "2024-12-31T23:59:59Z", // Optional (ISO 8601 format)
-  "assigned_to": 1                    // Optional (User ID)
+    "title": "Task Title",
+    "description": "Description",
+    "priority": "High",
+    "status": "In Progress",
+    "deadline": "2024-12-31T23:59:59Z",
+    "assigned_to_id": 4
   }
   ```
 
-### GET /projects/:project_id/tasks
+#### GET `/projects/:project_id/tasks`
+- **Headers:** `Authorization: Bearer <token>`
 
-- **Method:** `GET`
-- **Headers:**
-  - `Authorization: Bearer <token>`
-- **Path Parameters:**
-  - `project_id`: integer
+#### GET `/projects/:project_id/tasks/:task_id`
+- **Headers:** `Authorization: Bearer <token>`
 
-### GET /projects/:project_id/tasks/:task_id
-
-- **Method:** `GET`
-- **Headers:**
-  - `Authorization: Bearer <token>`
-- **Path Parameters:**
-  - `project_id`: integer
-  - `task_id`: integer
-
-### PUT /projects/:project_id/tasks/:task_id
-
-- **Method:** `PUT`
+#### PUT `/projects/:project_id/tasks/:task_id`
 - **Headers:**
   - `Authorization: Bearer <token>`
   - `Content-Type: application/json`
-- **Path Parameters:**
-  - `project_id`: integer
-  - `task_id`: integer
-- **Request Body:**
-
+- **Body:**
   ```json
   {
-  "title": "string",               // Optional
-  "description": "string",         // Optional
-  "priority": "low" | "medium" | "high",    // Optional
-  "status": "pending" | "in_progress" | "completed" | "cancelled", // Optional
-  "deadline": "2024-12-31T23:59:59Z",     // Optional (ISO 8601 format)
-  "assigned_to": 2                    // Optional (User ID)
+    "title": "Updated Task Title",
+    "status": "Completed"
   }
   ```
 
-### DELETE /projects/:project_id/tasks/:task_id
-
-- **Method:** `DELETE`
-- **Headers:**
-  - `Authorization: Bearer <token>`
-- **Path Parameters:**
-  - `project_id`: integer
-  - `task_id`: integer
-
-## Collaboration Routes (`/projects/:project_id/collaborators`)
-
-### POST /projects/:project_id/collaborators
-
-- **Method:** `POST`
-- **Headers:**
-  - `Authorization: Bearer <token>`
-  - `Content-Type: application/json`
-- **Path Parameters:**
-  - `project_id`: integer
-- **Request Body:**
-
-  ```json
-  {
-  "user_id": 1,
-  "role": "admin" | "collaborator"
-  }
-  ```
-
-### GET /projects/:project_id/collaborators
-
-- **Method:** `GET`
-- **Headers:**
-  - `Authorization: Bearer <token>`
-- **Path Parameters:**
-  - `project_id`: integer
-
-### PUT /projects/:project_id/collaborators/:collaborator_id
-
-- **Method:** `PUT`
-- **Headers:**
-  - `Authorization: Bearer <token>`
-  - `Content-Type: application/json`
-- **Path Parameters:**
-  - `project_id`: integer
-  - `collaborator_id`: integer
-- **Request Body:**
-
-  ```json
-  {
-  "role": "admin" | "collaborator"
-  }
-  ```
-
-### DELETE /projects/:project_id/collaborators/:collaborator_id
-
-- **Method:** `DELETE`
-- **Headers:**
-  - `Authorization: Bearer <token>`
-- **Path Parameters:**
-  - `project_id`: integer
-  - `collaborator_id`: integer
-
-## Note Routes (`/projects/:project_id/notes`)
-
-### POST /projects/:project_id/notes
-
-- **Method:** `POST`
-- **Headers:**
-  - `Authorization: Bearer <token>`
-  - `Content-Type: application/json`
-- **Path Parameters:**
-  - `project_id`: integer
-- **Request Body:**
-
-  ```json
-  {
-    "content": "string"
-  }
-  ```
-
-### GET /projects/:project_id/notes
-
-- **Method:** `GET`
-- **Headers:**
-  - `Authorization: Bearer <token>`
-- **Path Parameters:**
-  - `project_id`: integer
-
-### GET /projects/:project_id/notes/:note_id
-
-- **Method:** `GET`
-- **Headers:**
-  - `Authorization: Bearer <token>`
-- **Path Parameters:**
-  - `project_id`: integer
-  - `note_id`: integer
-
-### PUT /projects/:project_id/notes/:note_id
-
-- **Method:** `PUT`
-- **Headers:**
-  - `Authorization: Bearer <token>`
-  - `Content-Type: application/json`
-- **Path Parameters:**
-  - `project_id`: integer
-  - `note_id`: integer
-- **Request Body:**
-
-  ```json
-  {
-    "content": "string" // Optional
-  }
-  ```
-
-### DELETE /projects/:project_id/notes/:note_id
-
-- **Method:** `DELETE`
-- **Headers:**
-  - `Authorization: Bearer <token>`
-- **Path Parameters:**
-  - `project_id`: integer
-  - `note_id`: integer
-
-## Activity Routes (`/projects/:project_id/activities`)
-
-### POST /projects/:project_id/activities
-
-- **Method:** `POST`
-- **Headers:**
-  - `Authorization: Bearer <token>`
-  - `Content-Type: application/json`
-- **Path Parameters:**
-  - `project_id`: integer
-- **Request Body:**
-
-  ```json
-  {
-  "description": "string",
-  "type": "task" | "event" | "milestone"
-  }
-  ```
-
-### GET /projects/:project_id/activities
-
-- **Method:** `GET`
-- **Headers:**
-  - `Authorization: Bearer <token>`
-- **Path Parameters:**
-  - `project_id`: integer
-
-### GET /projects/:project_id/activities/:activity_id
-
-- **Method:** `GET`
-- **Headers:**
-  - `Authorization: Bearer <token>`
-- **Path Parameters:**
-  - `project_id`: integer
-  - `activity_id`: integer
-
-### PUT /projects/:project_id/activities/:activity_id
-
-- **Method:** `PUT`
-- **Headers:**
-  - `Authorization: Bearer <token>`
-  - `Content-Type: application/json`
-- **Path Parameters:**
-  - `project_id`: integer
-  - `activity_id`: integer
-- **Request Body:**
-
-  ```json
-  {
-  "description": "string", // Optional
-  "type": "task" | "event" | "milestone" // Optional
-  }
-  ```
-
-### DELETE /projects/:project_id/activities/:activity_id
-
-- **Method:** `DELETE`
-- **Headers:**
-  - `Authorization: Bearer <token>`
-- **Path Parameters:**
-  - `project_id`: integer
-  - `activity_id`: integer
-
-## File Routes (`/projects/:project_id/files`)
-
-### POST /projects/:project_id/files
-
-- **Method:** `POST`
-- **Headers:**
-  - `Authorization: Bearer <token>`
-  - `Content-Type: multipart/form-data`
-- **Path Parameters:**
-  - `project_id`: integer
-- **Request Body:**
-  - from Data Field: `file` (File)
-- Description: Mengupload file ke Google Cloud Storage dan menyimpan metadata file ke database. Hanya tipe file yang diizinkan (misalnya gambar) dan ukuran maksimal 5MB yang diterima.
-
-### GET /projects/:project_id/files
-
-- **Method:** `GET`
-- **Headers:**
-  - `Authorization: Bearer <token>`
-- **Path Parameters:**
-  - `project_id`: integer
-
-### GET /projects/:project_id/files/:file_id
-
-- **Method:** `GET`
-- **Headers:**
-  - `Authorization: Bearer <token>`
-- **Path Parameters:**
-  - `project_id`: integer
-  - `file_id`: integer
-
-### DELETE /projects/:project_id/files/:file_id
-
-- **Method:** `DELETE`
-- **Headers:**
-  - `Authorization: Bearer <token>`
-- **Path Parameters:**
-  - `project_id`: integer
-  - `file_id`: integer
-
-## Notification Routes (`/projects/:project_id/notifications`)
-
-### POST /projects/:project_id/notifications
-
-- **Method:** `POST`
-- **Headers:**
-  - `Authorization: Bearer <token>`
-  - `Content-Type: application/json`
-- **Path Parameters:**
-  - `project_id`: integer
-- **Request Body:**
-
-  ```json
-  {
-  "user_id": 1,
-  "content": "Your task has been updated.",
-  "type": "info" | "warning" | "error" | "success",
-  "project_id": 2, // Optional
-  "is_read": false   // Optional, default false
-  }
-  ```
-
-### GET /projects/:project_id/notifications
-
-- **Method:** `GET`
-- **Headers:**
-  - `Authorization: Bearer <token>`
-- **Path Parameters:**
-  - `project_id`: integer
-
-### GET /projects/:project_id/notifications/:notification_id
-
-- **Method:** `GET`
-- **Headers:**
-  - `Authorization: Bearer <token>`
-- **Path Parameters:**
-  - `project_id`: integer
-  - `notification_id`: integer
-
-### PUT /projects/:project_id/notifications/:notification_id
-
-- **Method:** `PUT`
-- **Headers:**
-  - `Authorization: Bearer <token>`
-  - `Content-Type: application/json`
-- **Path Parameters:**
-  - `project_id`: integer
-  - `notification_id`: integer
-- **Request Body:**
-
-  ```json
-  {
-  "content": "string",          // Optional
-  "type": "info" | "warning" | "error" | "success", // Optional
-  "is_read": true               // Optional
-  }
-  ```
-
-### DELETE /projects/:project_id/notifications/:notification_id
-
-- **Method:** `DELETE`
-- **Headers:**
-  - `Authorization: Bearer <token>`
-- **Path Parameters:**
-  - `project_id`: integer
-  - `notification_id`: integer
+#### DELETE `/projects/:project_id/tasks/:task_id`
+- **Headers:** `Authorization: Bearer <token>`
