@@ -8,7 +8,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// Logger adalah instance global dari logrus.Logger
 var Logger *logrus.Logger
 
 // InitLogger menginisialisasi logger berdasarkan konfigurasi

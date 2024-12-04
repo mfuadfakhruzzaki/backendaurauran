@@ -14,134 +14,217 @@ import (
 
 // CreateProjectRequest represents the request structure for creating a project
 type CreateProjectRequest struct {
-	Name        string `json:"name" binding:"required"`
-	Description string `json:"description"`
+	Title       string     `json:"title" binding:"required"`
+	Description string     `json:"description"`
+	Priority    string     `json:"priority"`
+	Deadline    *time.Time `json:"deadline"`
+	Status      string     `json:"status"`
+	TeamIDs     []uint     `json:"team_ids"` // IDs of teams to associate with the project
 }
 
 // UpdateProjectRequest represents the request structure for updating a project
 type UpdateProjectRequest struct {
-	Name        string `json:"name" binding:"omitempty"`
-	Description string `json:"description" binding:"omitempty"`
+	Title       string     `json:"title"`
+	Description string     `json:"description"`
+	Priority    string     `json:"priority"`
+	Deadline    *time.Time `json:"deadline"`
+	Status      string     `json:"status"`
+	TeamIDs     []uint     `json:"team_ids"` // Optional: IDs of teams to associate with the project
 }
 
 // CreateProject handles the creation of a new project
 func CreateProject(c *gin.Context) {
-	// Ambil user_id dari context yang sudah di-set oleh AuthMiddleware
-	userID, exists := c.Get("user_id")
+	// Retrieve the User object from context set by AuthMiddleware
+	userInterface, exists := c.Get("user")
 	if !exists {
-		utils.Logger.Warn("User ID not found in context")
-		utils.ErrorResponse(c, http.StatusInternalServerError, "User ID not found")
+		utils.Logger.Warn("User not found in context")
+		utils.ErrorResponse(c, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	user, ok := userInterface.(models.User)
+	if !ok {
+		utils.Logger.Warn("User type assertion failed")
+		utils.ErrorResponse(c, http.StatusInternalServerError, "Internal server error")
 		return
 	}
 
 	var req CreateProjectRequest
-	// Bind JSON request ke struct
+	// Bind JSON request to struct
 	if err := c.ShouldBindJSON(&req); err != nil {
 		utils.ErrorResponse(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	// Buat instance Project baru
+	// Create a new Project instance
 	project := models.Project{
-		Name:        req.Name,
+		Title:       req.Title,
 		Description: req.Description,
-		OwnerID:     userID.(uint),
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
+		Priority:    req.Priority,
+		Deadline:    req.Deadline,
+		Status:      req.Status,
+		OwnerID:     user.ID,
 	}
 
-	// Simpan project ke database
-	if err := models.DB.Create(&project).Error; err != nil {
+	// Begin transaction
+	tx := models.DB.Begin()
+	if tx.Error != nil {
+		utils.Logger.Errorf("Failed to start transaction: %v", tx.Error)
+		utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to create project")
+		return
+	}
+
+	// Save project to database
+	if err := tx.Create(&project).Error; err != nil {
+		tx.Rollback()
 		utils.Logger.Errorf("Failed to create project: %v", err)
 		utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to create project")
 		return
 	}
 
-	utils.Logger.Infof("Project created successfully: %s by UserID %d", project.Name, userID.(uint))
+	// Associate teams if provided
+	if len(req.TeamIDs) > 0 {
+		var teams []models.Team
+		if err := tx.Where("id IN ?", req.TeamIDs).Find(&teams).Error; err != nil {
+			tx.Rollback()
+			utils.Logger.Errorf("Failed to find teams: %v", err)
+			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to associate teams")
+			return
+		}
 
-	// Kirim respons sukses dengan data project
-	utils.CreatedResponse(c, gin.H{
+		// Associate teams with the project
+		if err := tx.Model(&project).Association("Teams").Append(teams); err != nil {
+			tx.Rollback()
+			utils.Logger.Errorf("Failed to associate teams with project: %v", err)
+			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to associate teams")
+			return
+		}
+	}
+
+	// Commit transaction
+	if err := tx.Commit().Error; err != nil {
+		tx.Rollback()
+		utils.Logger.Errorf("Failed to commit transaction: %v", err)
+		utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to create project")
+		return
+	}
+
+	utils.Logger.Infof("Project created successfully: %s by UserID %d", project.Title, user.ID)
+
+	// Prepare response data
+	responseData := gin.H{
 		"id":          project.ID,
-		"name":        project.Name,
+		"title":       project.Title,
 		"description": project.Description,
+		"priority":    project.Priority,
+		"deadline":    project.Deadline,
+		"status":      project.Status,
 		"owner_id":    project.OwnerID,
 		"created_at":  project.CreatedAt,
 		"updated_at":  project.UpdatedAt,
-	})
+		"teams":       project.Teams,
+	}
+
+	// Send success response with project data
+	utils.CreatedResponse(c, responseData)
 }
 
 // ListProjects handles retrieving all projects the user owns or collaborates on
 func ListProjects(c *gin.Context) {
-	// Ambil user_id dari context yang sudah di-set oleh AuthMiddleware
-	userID, exists := c.Get("user_id")
+	// Retrieve the User object from context set by AuthMiddleware
+	userInterface, exists := c.Get("user")
 	if !exists {
-		utils.Logger.Warn("User ID not found in context")
-		utils.ErrorResponse(c, http.StatusInternalServerError, "User ID not found")
+		utils.Logger.Warn("User not found in context")
+		utils.ErrorResponse(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
-	var projects []models.Project
+	user, ok := userInterface.(models.User)
+	if !ok {
+		utils.Logger.Warn("User type assertion failed")
+		utils.ErrorResponse(c, http.StatusInternalServerError, "Internal server error")
+		return
+	}
 
-	// Ambil proyek yang dimiliki oleh pengguna
-	if err := models.DB.Where("owner_id = ?", userID.(uint)).Find(&projects).Error; err != nil {
+	var ownedProjects []models.Project
+	// Fetch projects owned by the user
+	if err := models.DB.Preload("Teams").Where("owner_id = ?", user.ID).Find(&ownedProjects).Error; err != nil {
 		utils.Logger.Errorf("Failed to retrieve owned projects: %v", err)
 		utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve projects")
 		return
 	}
 
-	// Tambahkan proyek yang pengguna kolaborasikan
-	var collaborations []models.Collaboration
-	if err := models.DB.Where("user_id = ?", userID.(uint)).Find(&collaborations).Error; err != nil {
-		utils.Logger.Errorf("Failed to retrieve collaborations: %v", err)
+	var collaboratingProjects []models.Project
+	// Fetch projects associated with teams the user is a member of
+	if err := models.DB.
+		Joins("JOIN project_teams ON project_teams.project_id = projects.id").
+		Joins("JOIN team_members ON team_members.team_id = project_teams.team_id").
+		Where("team_members.user_id = ?", user.ID).
+		Preload("Teams").
+		Preload("Owner").
+		Find(&collaboratingProjects).Error; err != nil {
+		utils.Logger.Errorf("Failed to retrieve collaborating projects: %v", err)
 		utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve projects")
 		return
 	}
 
-	for _, collaboration := range collaborations {
-		var project models.Project
-		if err := models.DB.First(&project, collaboration.ProjectID).Error; err == nil {
-			// Pastikan proyek tidak duplikat
-			duplicate := false
-			for _, p := range projects {
-				if p.ID == project.ID {
-					duplicate = true
-					break
-				}
-			}
-			if !duplicate {
-				projects = append(projects, project)
-			}
+	// Combine owned and collaborating projects, avoiding duplicates
+	projectMap := make(map[uint]models.Project)
+	for _, project := range ownedProjects {
+		projectMap[project.ID] = project
+	}
+	for _, project := range collaboratingProjects {
+		if _, exists := projectMap[project.ID]; !exists {
+			projectMap[project.ID] = project
 		}
 	}
 
-	// Siapkan data respons
+	// Convert map to slice
+	var allProjects []models.Project
+	for _, project := range projectMap {
+		allProjects = append(allProjects, project)
+	}
+
+	// Prepare response data
 	var responseData []gin.H
-	for _, project := range projects {
+	for _, project := range allProjects {
 		responseData = append(responseData, gin.H{
 			"id":          project.ID,
-			"name":        project.Name,
+			"title":       project.Title,
 			"description": project.Description,
+			"priority":    project.Priority,
+			"deadline":    project.Deadline,
+			"status":      project.Status,
 			"owner_id":    project.OwnerID,
 			"created_at":  project.CreatedAt,
 			"updated_at":  project.UpdatedAt,
+			"teams":       project.Teams,
 		})
 	}
 
 	utils.SuccessResponse(c, responseData)
 }
 
+
 // GetProject handles retrieving a single project by ID
 func GetProject(c *gin.Context) {
-	// Ambil user_id dari context yang sudah di-set oleh AuthMiddleware
-	userID, exists := c.Get("user_id")
+	// Retrieve the User object from context set by AuthMiddleware
+	userInterface, exists := c.Get("user")
 	if !exists {
-		utils.Logger.Warn("User ID not found in context")
-		utils.ErrorResponse(c, http.StatusInternalServerError, "User ID not found")
+		utils.Logger.Warn("User not found in context")
+		utils.ErrorResponse(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
-	// Ambil parameter project_id dari URL
-	projectIDParam := c.Param("project_id") // Perbaikan di sini
+	user, ok := userInterface.(models.User)
+	if !ok {
+		utils.Logger.Warn("User type assertion failed")
+		utils.ErrorResponse(c, http.StatusInternalServerError, "Internal server error")
+		return
+	}
+
+	// Retrieve project_id from URL parameters
+	projectIDParam := c.Param("project_id")
 	projectID, err := strconv.Atoi(projectIDParam)
 	if err != nil {
 		utils.ErrorResponse(c, http.StatusBadRequest, "Invalid project ID")
@@ -149,8 +232,8 @@ func GetProject(c *gin.Context) {
 	}
 
 	var project models.Project
-	// Ambil proyek dari database
-	if err := models.DB.First(&project, projectID).Error; err != nil {
+	// Fetch the project with preloaded Teams and Owner
+	if err := models.DB.Preload("Teams").Preload("Owner").First(&project, projectID).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			utils.ErrorResponse(c, http.StatusNotFound, "Project not found")
 			return
@@ -160,28 +243,36 @@ func GetProject(c *gin.Context) {
 		return
 	}
 
-	// Cek apakah pengguna adalah pemilik atau kolaborator proyek
-	if project.OwnerID != userID.(uint) {
-		var collaboration models.Collaboration
-		if err := models.DB.Where("project_id = ? AND user_id = ?", project.ID, userID.(uint)).First(&collaboration).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
-				utils.ErrorResponse(c, http.StatusForbidden, "You do not have access to this project")
-				return
-			}
-			utils.Logger.Errorf("Failed to check collaboration: %v", err)
+	// Check if the user is the owner
+	if project.OwnerID != user.ID {
+		// Check if the user is a member of any team associated with the project
+		var count int64
+		err = models.DB.Table("team_members").
+			Where("team_id IN (SELECT team_id FROM project_teams WHERE project_id = ?) AND user_id = ?", project.ID, user.ID).
+			Count(&count).Error
+		if err != nil {
+			utils.Logger.Errorf("Failed to check team membership: %v", err)
 			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve project")
+			return
+		}
+		if count == 0 && user.Role != "admin" {
+			utils.ErrorResponse(c, http.StatusForbidden, "You do not have access to this project")
 			return
 		}
 	}
 
-	// Siapkan data respons
+	// Prepare response data
 	responseData := gin.H{
 		"id":          project.ID,
-		"name":        project.Name,
+		"title":       project.Title,
 		"description": project.Description,
+		"priority":    project.Priority,
+		"deadline":    project.Deadline,
+		"status":      project.Status,
 		"owner_id":    project.OwnerID,
 		"created_at":  project.CreatedAt,
 		"updated_at":  project.UpdatedAt,
+		"teams":       project.Teams,
 	}
 
 	utils.SuccessResponse(c, responseData)
@@ -189,16 +280,23 @@ func GetProject(c *gin.Context) {
 
 // UpdateProject handles updating a project's details
 func UpdateProject(c *gin.Context) {
-	// Ambil user_id dari context yang sudah di-set oleh AuthMiddleware
-	userID, exists := c.Get("user_id")
+	// Retrieve the User object from context set by AuthMiddleware
+	userInterface, exists := c.Get("user")
 	if !exists {
-		utils.Logger.Warn("User ID not found in context")
-		utils.ErrorResponse(c, http.StatusInternalServerError, "User ID not found")
+		utils.Logger.Warn("User not found in context")
+		utils.ErrorResponse(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
-	// Ambil parameter project_id dari URL
-	projectIDParam := c.Param("project_id") // Perbaikan di sini
+	user, ok := userInterface.(models.User)
+	if !ok {
+		utils.Logger.Warn("User type assertion failed")
+		utils.ErrorResponse(c, http.StatusInternalServerError, "Internal server error")
+		return
+	}
+
+	// Retrieve project_id from URL parameters
+	projectIDParam := c.Param("project_id")
 	projectID, err := strconv.Atoi(projectIDParam)
 	if err != nil {
 		utils.ErrorResponse(c, http.StatusBadRequest, "Invalid project ID")
@@ -206,15 +304,15 @@ func UpdateProject(c *gin.Context) {
 	}
 
 	var req UpdateProjectRequest
-	// Bind JSON request ke struct
+	// Bind JSON request to struct
 	if err := c.ShouldBindJSON(&req); err != nil {
 		utils.ErrorResponse(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	var project models.Project
-	// Ambil proyek dari database
-	if err := models.DB.First(&project, projectID).Error; err != nil {
+	// Fetch the project with preloaded Teams
+	if err := models.DB.Preload("Teams").First(&project, projectID).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			utils.ErrorResponse(c, http.StatusNotFound, "Project not found")
 			return
@@ -224,46 +322,88 @@ func UpdateProject(c *gin.Context) {
 		return
 	}
 
-	// Cek apakah pengguna adalah pemilik proyek atau admin
-	// Jika Anda memiliki peran admin, tambahkan logika untuk memeriksa apakah pengguna adalah admin
-	// Misalnya, jika ada field role dalam user context:
-	// role, exists := c.Get("role")
-	// if !exists || role != "admin" {
-	//     // Cek apakah pemilik proyek
-	// }
-
-	if project.OwnerID != userID.(uint) {
-		// Jika Anda ingin menambahkan pengecekan peran admin, tambahkan logika di sini
+	// Check if the user is the owner
+	if project.OwnerID != user.ID {
 		utils.ErrorResponse(c, http.StatusForbidden, "You do not have permission to update this project")
 		return
 	}
 
-	// Update field jika disediakan
-	if req.Name != "" {
-		project.Name = req.Name
+	// Begin transaction
+	tx := models.DB.Begin()
+	if tx.Error != nil {
+		utils.Logger.Errorf("Failed to start transaction: %v", tx.Error)
+		utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to update project")
+		return
+	}
+
+	// Update fields if provided
+	if req.Title != "" {
+		project.Title = req.Title
 	}
 	if req.Description != "" {
 		project.Description = req.Description
 	}
+	if req.Priority != "" {
+		project.Priority = req.Priority
+	}
+	if req.Status != "" {
+		project.Status = req.Status
+	}
+	if req.Deadline != nil {
+		project.Deadline = req.Deadline
+	}
 	project.UpdatedAt = time.Now()
 
-	// Simpan perubahan ke database
-	if err := models.DB.Save(&project).Error; err != nil {
+	// Save changes to the database
+	if err := tx.Save(&project).Error; err != nil {
+		tx.Rollback()
 		utils.Logger.Errorf("Failed to update project: %v", err)
+		utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to update project")
+		return
+	}
+
+	// Update team associations if provided
+	if req.TeamIDs != nil {
+		var teams []models.Team
+		if len(req.TeamIDs) > 0 {
+			if err := tx.Where("id IN ?", req.TeamIDs).Find(&teams).Error; err != nil {
+				tx.Rollback()
+				utils.Logger.Errorf("Failed to find teams: %v", err)
+				utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to update associated teams")
+				return
+			}
+		}
+		// Replace current team associations
+		if err := tx.Model(&project).Association("Teams").Replace(teams); err != nil {
+			tx.Rollback()
+			utils.Logger.Errorf("Failed to update associated teams: %v", err)
+			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to update associated teams")
+			return
+		}
+	}
+
+	// Commit transaction
+	if err := tx.Commit().Error; err != nil {
+		tx.Rollback()
+		utils.Logger.Errorf("Failed to commit transaction: %v", err)
 		utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to update project")
 		return
 	}
 
 	utils.Logger.Infof("Project updated successfully: ProjectID %d", project.ID)
 
-	// Siapkan data respons
+	// Prepare response data
 	responseData := gin.H{
 		"id":          project.ID,
-		"name":        project.Name,
+		"title":       project.Title,
 		"description": project.Description,
+		"priority":    project.Priority,
+		"deadline":    project.Deadline,
+		"status":      project.Status,
 		"owner_id":    project.OwnerID,
 		"created_at":  project.CreatedAt,
 		"updated_at":  project.UpdatedAt,
+		"teams":       project.Teams,
 	}
 
 	utils.SuccessResponse(c, responseData)
@@ -271,16 +411,23 @@ func UpdateProject(c *gin.Context) {
 
 // DeleteProject handles deleting a project
 func DeleteProject(c *gin.Context) {
-	// Ambil user_id dari context yang sudah di-set oleh AuthMiddleware
-	userID, exists := c.Get("user_id")
+	// Retrieve the User object from context set by AuthMiddleware
+	userInterface, exists := c.Get("user")
 	if !exists {
-		utils.Logger.Warn("User ID not found in context")
-		utils.ErrorResponse(c, http.StatusInternalServerError, "User ID not found")
+		utils.Logger.Warn("User not found in context")
+		utils.ErrorResponse(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
-	// Ambil parameter project_id dari URL
-	projectIDParam := c.Param("project_id") // Perbaikan di sini
+	user, ok := userInterface.(models.User)
+	if !ok {
+		utils.Logger.Warn("User type assertion failed")
+		utils.ErrorResponse(c, http.StatusInternalServerError, "Internal server error")
+		return
+	}
+
+	// Retrieve project_id from URL parameters
+	projectIDParam := c.Param("project_id")
 	projectID, err := strconv.Atoi(projectIDParam)
 	if err != nil {
 		utils.ErrorResponse(c, http.StatusBadRequest, "Invalid project ID")
@@ -288,7 +435,7 @@ func DeleteProject(c *gin.Context) {
 	}
 
 	var project models.Project
-	// Ambil proyek dari database
+	// Fetch the project
 	if err := models.DB.First(&project, projectID).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			utils.ErrorResponse(c, http.StatusNotFound, "Project not found")
@@ -299,21 +446,13 @@ func DeleteProject(c *gin.Context) {
 		return
 	}
 
-	// Cek apakah pengguna adalah pemilik proyek atau admin
-	// Jika Anda memiliki peran admin, tambahkan logika untuk memeriksa apakah pengguna adalah admin
-	// Misalnya, jika ada field role dalam user context:
-	// role, exists := c.Get("role")
-	// if !exists || role != "admin" {
-	//     // Cek apakah pemilik proyek
-	// }
-
-	if project.OwnerID != userID.(uint) {
-		// Jika Anda ingin menambahkan pengecekan peran admin, tambahkan logika di sini
+	// Check if the user is the owner
+	if project.OwnerID != user.ID {
 		utils.ErrorResponse(c, http.StatusForbidden, "You do not have permission to delete this project")
 		return
 	}
 
-	// Hapus proyek dari database (soft delete jika menggunakan gorm.DeletedAt)
+	// Delete the project (soft delete if using GORM's DeletedAt)
 	if err := models.DB.Delete(&project).Error; err != nil {
 		utils.Logger.Errorf("Failed to delete project: %v", err)
 		utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to delete project")
@@ -322,7 +461,7 @@ func DeleteProject(c *gin.Context) {
 
 	utils.Logger.Infof("Project deleted successfully: ProjectID %d", project.ID)
 
-	// Kirim respons sukses
+	// Send success response
 	utils.SuccessResponse(c, gin.H{"message": "Project deleted successfully"})
 }
 

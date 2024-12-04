@@ -210,7 +210,7 @@ func Logout(c *gin.Context) {
 		UserID:    claims.UserID,
 		Token:     tokenStr,
 		Type:      models.TokenTypeJWTBlacklist,
-		ExpiresAt: time.Now().Add(time.Hour * 24), // Adjust blacklist duration
+		ExpiresAt: time.Unix(claims.ExpiresAt, 0), // Ensure correct expiration
 	}
 
 	if err := models.DB.Create(&blacklistToken).Error; err != nil {
@@ -475,6 +475,7 @@ func ResetPassword(c *gin.Context) {
 			c.Data(http.StatusBadRequest, "text/html; charset=utf-8", []byte(failureHTML))
 			return
 		}
+		utils.Logger.Errorf("Failed to verify reset token: %v", err)
 		// Render generic failure page
 		c.Data(http.StatusInternalServerError, "text/html; charset=utf-8", []byte(failureHTML))
 		return
@@ -493,27 +494,33 @@ func ResetPassword(c *gin.Context) {
 		return
 	}
 
+	// **Correction Starts Here**
 	// Manually hash the new password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
 	if err != nil {
-		// Render failure page with message
+		utils.Logger.Errorf("Failed to hash password: %v", err)
 		c.Data(http.StatusInternalServerError, "text/html; charset=utf-8", []byte(failureHTML))
 		return
 	}
 
 	// Update password with the new hashed password
 	user.Password = string(hashedPassword)
+	// **Correction Ends Here**
 
 	if err := models.DB.Save(&user).Error; err != nil {
 		// Render failure page with message
+		utils.Logger.Errorf("Failed to update user password: %v", err)
 		c.Data(http.StatusInternalServerError, "text/html; charset=utf-8", []byte(failureHTML))
 		return
 	}
 
 	// Delete the token after use
 	if err := models.DB.Delete(&token).Error; err != nil {
+		utils.Logger.Errorf("Failed to delete reset token: %v", err)
 		// Do not return error since password is already changed
 	}
+
+	utils.Logger.Infof("Password reset successfully for user: %s", user.Email)
 
 	// Render password reset success page
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(successResetHTML))
@@ -551,8 +558,18 @@ func ResetPasswordAPI(c *gin.Context) {
 		return
 	}
 
-	// Update password (pastikan password di-hash oleh GORM hooks atau lakukan hashing di sini)
-	user.Password = req.NewPassword
+	// **Correction Starts Here**
+	// Manually hash the new password
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		utils.Logger.Errorf("Failed to hash password: %v", err)
+		utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to reset password")
+		return
+	}
+
+	// Update password with the new hashed password
+	user.Password = string(hashedPassword)
+	// **Correction Ends Here**
 
 	if err := models.DB.Save(&user).Error; err != nil {
 		utils.Logger.Errorf("Failed to update user password: %v", err)
@@ -563,7 +580,7 @@ func ResetPasswordAPI(c *gin.Context) {
 	// Delete the token after use
 	if err := models.DB.Delete(&token).Error; err != nil {
 		utils.Logger.Errorf("Failed to delete reset token: %v", err)
-		// Tidak mengembalikan error karena password sudah diubah
+		// Do not return error since password is already changed
 	}
 
 	utils.Logger.Infof("Password reset successfully for user: %s", user.Email)

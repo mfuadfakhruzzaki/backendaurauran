@@ -7,6 +7,15 @@ import (
 	"gorm.io/gorm"
 )
 
+// ActivityType represents the type of activity
+type ActivityType string
+
+const (
+	TypeTask      ActivityType = "task"
+	TypeEvent     ActivityType = "event"
+	TypeMilestone ActivityType = "milestone"
+)
+
 // Activity represents an activity within a project
 type Activity struct {
 	ID          uint           `gorm:"primaryKey" json:"id"`
@@ -17,7 +26,7 @@ type Activity struct {
 	UserID      uint           `gorm:"not null;index" json:"user_id" validate:"required"`
 	User        User           `gorm:"foreignKey:UserID" json:"user,omitempty"`
 	Description string         `gorm:"not null" json:"description" validate:"required"`
-	Type        string         `gorm:"type:varchar(20);not null" json:"type" validate:"required,oneof=task event milestone"`
+	Type        ActivityType   `gorm:"type:varchar(20);not null" json:"type" validate:"required,oneof=task event milestone"`
 	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
 }
 

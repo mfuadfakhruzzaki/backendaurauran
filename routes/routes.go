@@ -5,7 +5,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/mfuadfakhruzzaki/backendaurauran/controllers"
 	"github.com/mfuadfakhruzzaki/backendaurauran/middlewares"
-	"github.com/mfuadfakhruzzaki/backendaurauran/models"
 	"github.com/mfuadfakhruzzaki/backendaurauran/storage"
 	"gorm.io/gorm"
 )
@@ -16,9 +15,14 @@ func SetupRouter(db *gorm.DB, storageService storage.StorageService, bucketName 
 
 	// Initialize controllers with dependencies
 	fileController := controllers.NewFileController(db, storageService, bucketName)
-	// You can initialize other controllers similarly if they require dependencies
+	notificationController := controllers.NewNotificationController(db)
+	// Inisialisasi controller lain jika diperlukan, misalnya:
+	// userController := controllers.NewUserController(db)
+	// teamController := controllers.NewTeamController(db)
+	// projectController := controllers.NewProjectController(db)
+	// ... dan seterusnya
 
-	// Middleware global
+	// Global middleware
 	router.Use(middlewares.CORSMiddleware())
 	router.Use(middlewares.LoggingMiddleware())
 	router.Use(middlewares.RecoveryMiddleware())
@@ -34,7 +38,7 @@ func SetupRouter(db *gorm.DB, storageService storage.StorageService, bucketName 
 		auth.POST("/request-password-reset", controllers.RequestPasswordReset)
 		auth.POST("/reset-password", controllers.ResetPassword)
 		auth.GET("/reset-password", controllers.ResetPasswordForm)
-		auth.POST("/auth/reset-password-api", controllers.ResetPasswordAPI)
+		auth.POST("/reset-password-api", controllers.ResetPasswordAPI)
 	}
 
 	// Protected routes (requires authentication)
@@ -49,16 +53,34 @@ func SetupRouter(db *gorm.DB, storageService storage.StorageService, bucketName 
 			user.DELETE("/profile", controllers.DeleteProfile)
 		}
 
+		// Team routes
+		team := protected.Group("/teams")
+		{
+			team.POST("/", controllers.CreateTeam)
+			team.GET("/", controllers.ListTeams)
+			team.GET("/:team_id", controllers.GetTeam)
+			team.PUT("/:team_id", controllers.UpdateTeam)
+			team.DELETE("/:team_id", controllers.DeleteTeam)
+
+			// Team Members routes
+			members := team.Group("/:team_id/members")
+			{
+				members.POST("/", controllers.AddTeamMember)
+				members.GET("/", controllers.ListTeamMembers)
+				members.DELETE("/:user_id", controllers.RemoveTeamMember)
+			}
+		}
+
 		// Project routes
 		project := protected.Group("/projects")
 		{
-			project.POST("/", middlewares.RoleMiddleware(models.RoleAdmin, models.RoleManager), controllers.CreateProject)
+			project.POST("/", controllers.CreateProject)
 			project.GET("/", controllers.ListProjects)
 			project.GET("/:project_id", controllers.GetProject)
 			project.PUT("/:project_id", controllers.UpdateProject)
 			project.DELETE("/:project_id", controllers.DeleteProject)
 
-			// Collaboration routes
+			// Collaborators routes
 			collab := project.Group("/:project_id/collaborators")
 			{
 				collab.POST("/", controllers.AddCollaborator)
@@ -67,14 +89,22 @@ func SetupRouter(db *gorm.DB, storageService storage.StorageService, bucketName 
 				collab.DELETE("/:collaborator_id", controllers.RemoveCollaborator)
 			}
 
+			// Project Teams routes
+			projectTeams := project.Group("/:project_id/teams")
+			{
+				projectTeams.POST("/", controllers.AddProjectTeam)
+				projectTeams.GET("/", controllers.ListProjectTeams)
+				projectTeams.DELETE("/:team_id", controllers.RemoveProjectTeam)
+			}
+
 			// Activity routes
 			activity := project.Group("/:project_id/activities")
 			{
 				activity.POST("/", controllers.CreateActivity)
 				activity.GET("/", controllers.ListActivities)
-				activity.GET("/:id", controllers.GetActivity)
-				activity.PUT("/:id", controllers.UpdateActivity)
-				activity.DELETE("/:id", controllers.DeleteActivity)
+				activity.GET("/:activity_id", controllers.GetActivity)
+				activity.PUT("/:activity_id", controllers.UpdateActivity)
+				activity.DELETE("/:activity_id", controllers.DeleteActivity)
 			}
 
 			// Task routes
@@ -82,9 +112,9 @@ func SetupRouter(db *gorm.DB, storageService storage.StorageService, bucketName 
 			{
 				task.POST("/", controllers.CreateTask)
 				task.GET("/", controllers.ListTasks)
-				task.GET("/:id", controllers.GetTask)
-				task.PUT("/:id", controllers.UpdateTask)
-				task.DELETE("/:id", controllers.DeleteTask)
+				task.GET("/:task_id", controllers.GetTask)
+				task.PUT("/:task_id", controllers.UpdateTask)
+				task.DELETE("/:task_id", controllers.DeleteTask)
 			}
 
 			// Note routes
@@ -102,18 +132,18 @@ func SetupRouter(db *gorm.DB, storageService storage.StorageService, bucketName 
 			{
 				file.POST("/", fileController.UploadFile)
 				file.GET("/", fileController.ListFiles)
-				file.GET("/:id", fileController.DownloadFile)
-				file.DELETE("/:id", fileController.DeleteFile)
+				file.GET("/:file_id", fileController.DownloadFile)
+				file.DELETE("/:file_id", fileController.DeleteFile)
 			}
 
-			// Notification routes
+			// Notification routes (using notificationController instance methods)
 			notification := project.Group("/:project_id/notifications")
 			{
-				notification.POST("/", controllers.CreateNotification)
-				notification.GET("/", controllers.ListNotifications)
-				notification.GET("/:id", controllers.GetNotification)
-				notification.PUT("/:id", controllers.UpdateNotification)
-				notification.DELETE("/:id", controllers.DeleteNotification)
+				notification.POST("/", notificationController.CreateNotification)
+				notification.GET("/", notificationController.ListNotifications)
+				notification.GET("/:notification_id", notificationController.GetNotification)
+				notification.PUT("/:notification_id", notificationController.UpdateNotification)
+				notification.DELETE("/:notification_id", notificationController.DeleteNotification)
 			}
 		}
 	}

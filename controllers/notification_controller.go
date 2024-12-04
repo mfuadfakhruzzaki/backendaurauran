@@ -12,80 +12,116 @@ import (
 	"gorm.io/gorm"
 )
 
-// CreateNotificationRequest represents the request structure for creating a notification
-type CreateNotificationRequest struct {
-	UserID    uint                 `json:"user_id" binding:"required"`
-	Content   string               `json:"content" binding:"required"`
-	Type      models.NotificationType `json:"type" binding:"required,oneof=info warning error success"`
-	ProjectID *uint                `json:"project_id" binding:"omitempty"`
-	IsRead    *bool                `json:"is_read"` // Opsional, default false
+// NotificationController handles notification-related operations
+type NotificationController struct {
+	DB *gorm.DB
 }
 
-// UpdateNotificationRequest represents the request structure for updating a notification
-type UpdateNotificationRequest struct {
-	Content *string                 `json:"content" binding:"omitempty"`
-	Type    *models.NotificationType `json:"type" binding:"omitempty,oneof=info warning error success"`
-	IsRead  *bool                   `json:"is_read" binding:"omitempty"`
+// NewNotificationController creates a new NotificationController instance
+func NewNotificationController(db *gorm.DB) *NotificationController {
+	return &NotificationController{
+		DB: db,
+	}
 }
 
 // CreateNotification handles the creation of a new notification
-func CreateNotification(c *gin.Context) {
-	var req CreateNotificationRequest
-	// Bind JSON request ke struct
+func (nc *NotificationController) CreateNotification(c *gin.Context) {
+	// Retrieve the User object from context set by AuthMiddleware
+	userInterface, exists := c.Get(utils.ContextUserKey)
+	if !exists {
+		utils.Logger.Warn("User not found in context")
+		utils.ErrorResponse(c, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	_, ok := userInterface.(models.User)
+	if !ok {
+		utils.Logger.Warn("User type assertion failed")
+		utils.ErrorResponse(c, http.StatusInternalServerError, "Internal server error")
+		return
+	}
+
+	// Retrieve project_id from URL parameters
+	projectIDParam := c.Param("project_id")
+	projectID, err := strconv.Atoi(projectIDParam)
+	if err != nil {
+		utils.ErrorResponse(c, http.StatusBadRequest, "Invalid project ID in URL")
+		return
+	}
+
+	var req models.CreateNotificationRequest
+	// Bind JSON request to struct
 	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.Logger.Warnf("Invalid request payload: %v", err)
+		utils.ErrorResponse(c, http.StatusBadRequest, "Invalid request payload")
+		return
+	}
+
+	// Validate the request using validator
+	if err := utils.Validator.Struct(req); err != nil {
+		utils.Logger.Warnf("Validation error: %v", err)
 		utils.ErrorResponse(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	// Cek apakah pengguna yang dituju ada
-	var user models.User
-	if err := models.DB.First(&user, req.UserID).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			utils.ErrorResponse(c, http.StatusNotFound, "User not found")
-			return
-		}
-		utils.Logger.Errorf("Failed to retrieve user: %v", err)
-		utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve user")
+	// Validate that the ProjectID in the body matches the URL (if provided)
+	if req.ProjectID != nil && *req.ProjectID != uint(projectID) {
+		utils.ErrorResponse(c, http.StatusBadRequest, "Project ID in URL does not match Project ID in body")
 		return
 	}
 
-	// Jika ProjectID disediakan, cek apakah proyek ada
-	if req.ProjectID != nil {
-		var project models.Project
-		if err := models.DB.First(&project, *req.ProjectID).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
-				utils.ErrorResponse(c, http.StatusNotFound, "Project not found")
-				return
-			}
-			utils.Logger.Errorf("Failed to retrieve project: %v", err)
-			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve project")
-			return
-		}
+	// Set ProjectID from URL if not provided in the body
+	if req.ProjectID == nil {
+		projectIDUint := uint(projectID)
+		req.ProjectID = &projectIDUint
 	}
 
-	// Jika IsRead tidak disediakan, set default false
+	// Check if the recipient user exists
+	var recipient models.User
+	if err := nc.DB.First(&recipient, req.UserID).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			utils.ErrorResponse(c, http.StatusNotFound, "Recipient user not found")
+			return
+		}
+		utils.Logger.Errorf("Failed to retrieve recipient user: %v", err)
+		utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve recipient user")
+		return
+	}
+
+	// Check if the project exists and if the sender has access to it
+	var project models.Project
+	if err := nc.DB.Preload("Owner").First(&project, projectID).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			utils.ErrorResponse(c, http.StatusNotFound, "Project not found")
+			return
+		}
+		utils.Logger.Errorf("Failed to retrieve project: %v", err)
+		utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve project")
+		return
+	}
+
+	// Optional: Check if the sender has access to the project (e.g., is owner or team member)
+	// Implement this check based on your application's authorization logic
+
+	// If IsRead is not provided, default to false
 	isRead := false
 	if req.IsRead != nil {
 		isRead = *req.IsRead
 	}
 
-	// Buat instance Notification baru
+	// Create a new Notification instance
 	notification := models.Notification{
 		UserID:    req.UserID,
 		Content:   req.Content,
 		Type:      req.Type,
+		ProjectID: req.ProjectID,
 		IsRead:    isRead,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
 
-	// Jika ProjectID disediakan, set
-	if req.ProjectID != nil {
-		notification.ProjectID = *req.ProjectID
-	}
-
-	// Simpan notification ke database
-	if err := models.DB.Create(&notification).Error; err != nil {
+	// Save notification to database
+	if err := nc.DB.Create(&notification).Error; err != nil {
 		utils.Logger.Errorf("Failed to create notification: %v", err)
 		utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to create notification")
 		return
@@ -93,7 +129,7 @@ func CreateNotification(c *gin.Context) {
 
 	utils.Logger.Infof("Notification created successfully: NotificationID %d for UserID %d", notification.ID, req.UserID)
 
-	// Kirim respons sukses dengan data notifikasi
+	// Send success response with notification data
 	utils.CreatedResponse(c, gin.H{
 		"id":         notification.ID,
 		"user_id":    notification.UserID,
@@ -107,24 +143,31 @@ func CreateNotification(c *gin.Context) {
 }
 
 // ListNotifications handles retrieving all notifications for the current user
-func ListNotifications(c *gin.Context) {
-	// Ambil user_id dari context yang sudah di-set oleh AuthMiddleware
-	currentUserID, exists := c.Get("user_id")
+func (nc *NotificationController) ListNotifications(c *gin.Context) {
+	// Retrieve the User object from context set by AuthMiddleware
+	userInterface, exists := c.Get(utils.ContextUserKey)
 	if !exists {
-		utils.Logger.Warn("User ID not found in context")
-		utils.ErrorResponse(c, http.StatusInternalServerError, "User ID not found")
+		utils.Logger.Warn("User not found in context")
+		utils.ErrorResponse(c, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	user, ok := userInterface.(models.User)
+	if !ok {
+		utils.Logger.Warn("User type assertion failed")
+		utils.ErrorResponse(c, http.StatusInternalServerError, "Internal server error")
 		return
 	}
 
 	var notifications []models.Notification
-	// Ambil semua notifikasi untuk pengguna, urutkan dari yang terbaru
-	if err := models.DB.Where("user_id = ?", currentUserID.(uint)).Order("created_at desc").Find(&notifications).Error; err != nil {
+	// Retrieve all notifications for the user, ordered by newest first
+	if err := nc.DB.Where("user_id = ?", user.ID).Order("created_at desc").Find(&notifications).Error; err != nil {
 		utils.Logger.Errorf("Failed to retrieve notifications: %v", err)
 		utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve notifications")
 		return
 	}
 
-	// Siapkan data respons
+	// Prepare response data
 	var responseData []gin.H
 	for _, notification := range notifications {
 		responseData = append(responseData, gin.H{
@@ -143,16 +186,23 @@ func ListNotifications(c *gin.Context) {
 }
 
 // GetNotification handles retrieving a single notification by ID for the current user
-func GetNotification(c *gin.Context) {
-	// Ambil user_id dari context yang sudah di-set oleh AuthMiddleware
-	currentUserID, exists := c.Get("user_id")
+func (nc *NotificationController) GetNotification(c *gin.Context) {
+	// Retrieve the User object from context set by AuthMiddleware
+	userInterface, exists := c.Get(utils.ContextUserKey)
 	if !exists {
-		utils.Logger.Warn("User ID not found in context")
-		utils.ErrorResponse(c, http.StatusInternalServerError, "User ID not found")
+		utils.Logger.Warn("User not found in context")
+		utils.ErrorResponse(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
-	// Ambil parameter notification_id dari URL
+	user, ok := userInterface.(models.User)
+	if !ok {
+		utils.Logger.Warn("User type assertion failed")
+		utils.ErrorResponse(c, http.StatusInternalServerError, "Internal server error")
+		return
+	}
+
+	// Retrieve notification_id from URL parameters
 	notificationIDParam := c.Param("id")
 	notificationID, err := strconv.Atoi(notificationIDParam)
 	if err != nil {
@@ -161,8 +211,8 @@ func GetNotification(c *gin.Context) {
 	}
 
 	var notification models.Notification
-	// Ambil notifikasi dari database
-	if err := models.DB.Where("id = ? AND user_id = ?", notificationID, currentUserID.(uint)).First(&notification).Error; err != nil {
+	// Retrieve notification from database
+	if err := nc.DB.Where("id = ? AND user_id = ?", notificationID, user.ID).First(&notification).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			utils.ErrorResponse(c, http.StatusNotFound, "Notification not found")
 			return
@@ -172,7 +222,7 @@ func GetNotification(c *gin.Context) {
 		return
 	}
 
-	// Siapkan data respons
+	// Prepare response data
 	responseData := gin.H{
 		"id":         notification.ID,
 		"user_id":    notification.UserID,
@@ -188,16 +238,23 @@ func GetNotification(c *gin.Context) {
 }
 
 // UpdateNotification handles updating a notification's status or content
-func UpdateNotification(c *gin.Context) {
-	// Ambil user_id dari context yang sudah di-set oleh AuthMiddleware
-	currentUserID, exists := c.Get("user_id")
+func (nc *NotificationController) UpdateNotification(c *gin.Context) {
+	// Retrieve the User object from context set by AuthMiddleware
+	userInterface, exists := c.Get(utils.ContextUserKey)
 	if !exists {
-		utils.Logger.Warn("User ID not found in context")
-		utils.ErrorResponse(c, http.StatusInternalServerError, "User ID not found")
+		utils.Logger.Warn("User not found in context")
+		utils.ErrorResponse(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
-	// Ambil parameter notification_id dari URL
+	user, ok := userInterface.(models.User)
+	if !ok {
+		utils.Logger.Warn("User type assertion failed")
+		utils.ErrorResponse(c, http.StatusInternalServerError, "Internal server error")
+		return
+	}
+
+	// Retrieve notification_id from URL parameters
 	notificationIDParam := c.Param("id")
 	notificationID, err := strconv.Atoi(notificationIDParam)
 	if err != nil {
@@ -205,22 +262,29 @@ func UpdateNotification(c *gin.Context) {
 		return
 	}
 
-	var req UpdateNotificationRequest
-	// Bind JSON request ke struct
+	var req models.UpdateNotificationRequest
+	// Bind JSON request to struct
 	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.ErrorResponse(c, http.StatusBadRequest, "Invalid request payload")
+		return
+	}
+
+	// Validate request using validator
+	if err := utils.Validator.Struct(req); err != nil {
+		utils.Logger.Warnf("Validation error: %v", err)
 		utils.ErrorResponse(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	// Cek apakah ada setidaknya satu field yang diubah
+	// Check if at least one field is provided for update
 	if req.Content == nil && req.IsRead == nil && req.Type == nil {
 		utils.ErrorResponse(c, http.StatusBadRequest, "No fields to update")
 		return
 	}
 
 	var notification models.Notification
-	// Ambil notifikasi dari database
-	if err := models.DB.Where("id = ? AND user_id = ?", notificationID, currentUserID.(uint)).First(&notification).Error; err != nil {
+	// Retrieve notification from database
+	if err := nc.DB.Where("id = ? AND user_id = ?", notificationID, user.ID).First(&notification).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			utils.ErrorResponse(c, http.StatusNotFound, "Notification not found")
 			return
@@ -230,20 +294,20 @@ func UpdateNotification(c *gin.Context) {
 		return
 	}
 
-	// Update field jika disediakan
+	// Update fields if provided
 	if req.Content != nil {
 		notification.Content = *req.Content
 	}
 	if req.Type != nil {
-		notification.Type = *req.Type
+		notification.Type = models.NotificationType(*req.Type)
 	}
 	if req.IsRead != nil {
 		notification.IsRead = *req.IsRead
 	}
 	notification.UpdatedAt = time.Now()
 
-	// Simpan perubahan ke database
-	if err := models.DB.Save(&notification).Error; err != nil {
+	// Save changes to database
+	if err := nc.DB.Save(&notification).Error; err != nil {
 		utils.Logger.Errorf("Failed to update notification: %v", err)
 		utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to update notification")
 		return
@@ -251,7 +315,7 @@ func UpdateNotification(c *gin.Context) {
 
 	utils.Logger.Infof("Notification updated successfully: NotificationID %d for UserID %d", notification.ID, notification.UserID)
 
-	// Siapkan data respons
+	// Prepare response data
 	responseData := gin.H{
 		"id":         notification.ID,
 		"user_id":    notification.UserID,
@@ -267,16 +331,23 @@ func UpdateNotification(c *gin.Context) {
 }
 
 // DeleteNotification handles deleting a notification
-func DeleteNotification(c *gin.Context) {
-	// Ambil user_id dari context yang sudah di-set oleh AuthMiddleware
-	currentUserID, exists := c.Get("user_id")
+func (nc *NotificationController) DeleteNotification(c *gin.Context) {
+	// Retrieve the User object from context set by AuthMiddleware
+	userInterface, exists := c.Get(utils.ContextUserKey)
 	if !exists {
-		utils.Logger.Warn("User ID not found in context")
-		utils.ErrorResponse(c, http.StatusInternalServerError, "User ID not found")
+		utils.Logger.Warn("User not found in context")
+		utils.ErrorResponse(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
-	// Ambil parameter notification_id dari URL
+	user, ok := userInterface.(models.User)
+	if !ok {
+		utils.Logger.Warn("User type assertion failed")
+		utils.ErrorResponse(c, http.StatusInternalServerError, "Internal server error")
+		return
+	}
+
+	// Retrieve notification_id from URL parameters
 	notificationIDParam := c.Param("id")
 	notificationID, err := strconv.Atoi(notificationIDParam)
 	if err != nil {
@@ -285,8 +356,8 @@ func DeleteNotification(c *gin.Context) {
 	}
 
 	var notification models.Notification
-	// Ambil notifikasi dari database
-	if err := models.DB.Where("id = ? AND user_id = ?", notificationID, currentUserID.(uint)).First(&notification).Error; err != nil {
+	// Retrieve notification from database
+	if err := nc.DB.Where("id = ? AND user_id = ?", notificationID, user.ID).First(&notification).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			utils.ErrorResponse(c, http.StatusNotFound, "Notification not found")
 			return
@@ -296,8 +367,8 @@ func DeleteNotification(c *gin.Context) {
 		return
 	}
 
-	// Hapus notifikasi dari database (soft delete jika menggunakan gorm.DeletedAt)
-	if err := models.DB.Delete(&notification).Error; err != nil {
+	// Delete notification from database (soft delete if using GORM's DeletedAt)
+	if err := nc.DB.Delete(&notification).Error; err != nil {
 		utils.Logger.Errorf("Failed to delete notification: %v", err)
 		utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to delete notification")
 		return
@@ -305,6 +376,6 @@ func DeleteNotification(c *gin.Context) {
 
 	utils.Logger.Infof("Notification deleted successfully: NotificationID %d for UserID %d", notification.ID, notification.UserID)
 
-	// Kirim respons sukses
+	// Send success response
 	utils.SuccessResponse(c, gin.H{"message": "Notification deleted successfully"})
 }

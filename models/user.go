@@ -33,6 +33,7 @@ type User struct {
 	Collaborations      []Collaboration `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE" json:"collaborations,omitempty"`
 	Notifications       []Notification  `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE" json:"notifications,omitempty"`
 	Notes               []Note          `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE" json:"notes,omitempty"`
+	Teams     []Team     `gorm:"many2many:team_members;constraint:OnDelete:CASCADE" json:"teams,omitempty"` // Optional
 }
 
 // BeforeCreate hashes the password before saving to the database

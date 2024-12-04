@@ -1,6 +1,8 @@
+// controllers/user_controller.go
 package controllers
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -8,28 +10,23 @@ import (
 	"github.com/lib/pq"
 	"github.com/mfuadfakhruzzaki/backendaurauran/models"
 	"github.com/mfuadfakhruzzaki/backendaurauran/utils"
-	"gorm.io/gorm"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // GetProfile handles retrieving the user's profile
 func GetProfile(c *gin.Context) {
-	// Get user_id from context set by AuthMiddleware
-	userID, exists := c.Get("user_id")
+	// **Perbaikan: Mengambil objek User dari konteks dengan kunci "user"**
+	userInterface, exists := c.Get("user")
 	if !exists {
-		utils.Logger.Warn("User ID not found in context")
-		utils.ErrorResponse(c, http.StatusInternalServerError, "User ID not found")
+		utils.Logger.Warn("User not found in context")
+		utils.ErrorResponse(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
-	var user models.User
-	// Retrieve user data from the database
-	if err := models.DB.First(&user, userID).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			utils.ErrorResponse(c, http.StatusNotFound, "User not found")
-			return
-		}
-		utils.Logger.Errorf("Failed to retrieve user profile: %v", err)
-		utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve profile")
+	user, ok := userInterface.(models.User)
+	if !ok {
+		utils.Logger.Warn("User type assertion failed")
+		utils.ErrorResponse(c, http.StatusInternalServerError, "Internal server error")
 		return
 	}
 
@@ -56,11 +53,18 @@ type UpdateProfileRequest struct {
 
 // UpdateProfile handles updating the user's profile
 func UpdateProfile(c *gin.Context) {
-	// Get user_id from context set by AuthMiddleware
-	userID, exists := c.Get("user_id")
+	// **Perbaikan: Mengambil objek User dari konteks dengan kunci "user"**
+	userInterface, exists := c.Get("user")
 	if !exists {
-		utils.Logger.Warn("User ID not found in context")
-		utils.ErrorResponse(c, http.StatusInternalServerError, "User ID not found")
+		utils.Logger.Warn("User not found in context")
+		utils.ErrorResponse(c, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	user, ok := userInterface.(models.User)
+	if !ok {
+		utils.Logger.Warn("User type assertion failed")
+		utils.ErrorResponse(c, http.StatusInternalServerError, "Internal server error")
 		return
 	}
 
@@ -77,24 +81,12 @@ func UpdateProfile(c *gin.Context) {
 		return
 	}
 
-	var user models.User
-	// Retrieve user data from the database
-	if err := models.DB.First(&user, userID).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			utils.ErrorResponse(c, http.StatusNotFound, "User not found")
-			return
-		}
-		utils.Logger.Errorf("Failed to retrieve user for update: %v", err)
-		utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to update profile")
-		return
-	}
-
-	// Update username if provided
+	// Update username if provided and different
 	if req.Username != "" && req.Username != user.Username {
 		user.Username = req.Username
 	}
 
-	// Update email if provided
+	// Update email if provided and different
 	if req.Email != "" && req.Email != user.Email {
 		user.Email = req.Email
 		user.IsEmailVerified = false // Mark email as unverified
@@ -102,7 +94,14 @@ func UpdateProfile(c *gin.Context) {
 
 	// Update password if provided
 	if req.Password != "" {
-		user.Password = req.Password // Password will be hashed by GORM hooks
+		// **Perbaikan: Meng-hash password sebelum disimpan**
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+		if err != nil {
+			utils.Logger.Errorf("Failed to hash password: %v", err)
+			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to update password")
+			return
+		}
+		user.Password = string(hashedPassword)
 	}
 
 	// Save changes to the database
@@ -118,7 +117,7 @@ func UpdateProfile(c *gin.Context) {
 
 	// If email was changed, send verification email
 	if req.Email != "" && req.Email != user.Email {
-		// Create new email verification token
+		// Generate new email verification token
 		verifyToken, err := utils.GenerateRandomToken(32)
 		if err != nil {
 			utils.Logger.Errorf("Failed to generate verification token: %v", err)
@@ -139,9 +138,10 @@ func UpdateProfile(c *gin.Context) {
 			return
 		}
 
-		// Send new verification email
+		// **Perbaikan: Mengirim email verifikasi dengan URL yang diformat dengan benar**
 		emailService := utils.NewEmailService()
-		if err := emailService.SendVerificationEmail(user.Email, verifyToken); err != nil {
+		verifyURL := fmt.Sprintf("https://yourdomain.com/auth/verify-email?token=%s", verifyToken)
+		if err := emailService.SendVerificationEmail(user.Email, verifyURL); err != nil {
 			utils.Logger.Errorf("Failed to send verification email: %v", err)
 			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to send verification email")
 			return
@@ -168,23 +168,18 @@ func UpdateProfile(c *gin.Context) {
 
 // DeleteProfile handles deleting the user's account (Optional)
 func DeleteProfile(c *gin.Context) {
-	// Get user_id from context set by AuthMiddleware
-	userID, exists := c.Get("user_id")
+	// **Perbaikan: Mengambil objek User dari konteks dengan kunci "user"**
+	userInterface, exists := c.Get("user")
 	if !exists {
-		utils.Logger.Warn("User ID not found in context")
-		utils.ErrorResponse(c, http.StatusInternalServerError, "User ID not found")
+		utils.Logger.Warn("User not found in context")
+		utils.ErrorResponse(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
-	var user models.User
-	// Retrieve user data from the database
-	if err := models.DB.First(&user, userID).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			utils.ErrorResponse(c, http.StatusNotFound, "User not found")
-			return
-		}
-		utils.Logger.Errorf("Failed to retrieve user for deletion: %v", err)
-		utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to delete account")
+	user, ok := userInterface.(models.User)
+	if !ok {
+		utils.Logger.Warn("User type assertion failed")
+		utils.ErrorResponse(c, http.StatusInternalServerError, "Internal server error")
 		return
 	}
 

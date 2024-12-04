@@ -20,6 +20,9 @@ func main() {
 	// Initialize logger
 	utils.InitLogger()
 
+	// Initialize validator
+	utils.InitValidator()
+
 	// Connect to the database
 	db, err := setupDatabase()
 	if err != nil {
@@ -45,20 +48,24 @@ func main() {
 		utils.Logger.Fatalf("Failed to run auto migrations: %v", err)
 	}
 
-	// Initialize the storage service with GCS credentials
-	storageService, err := storage.NewGCSStorageService(context.Background(), config.AppConfig.Storage.CredentialsPath)
+	// Load storage configuration
+	storageConfig := config.LoadStorageConfig()
+
+	// Initialize the storage service with AWS S3 credentials
+	storageService, err := initializeS3StorageService(storageConfig)
 	if err != nil {
 		utils.Logger.Fatalf("Failed to initialize storage service: %v", err)
 	}
 
 	// Setup router with all routes
-	router := routes.SetupRouter(db, storageService, config.AppConfig.Storage.BucketName)
+	router := routes.SetupRouter(db, storageService, storageConfig.BucketName)
 
 	// Run the server
 	port := config.AppConfig.Server.Port
 	if port == "" {
 		port = "8080"
 	}
+	utils.Logger.Infof("Server is running on port %s", port)
 	if err := router.Run(fmt.Sprintf(":%s", port)); err != nil {
 		utils.Logger.Fatalf("Failed to run server: %v", err)
 	}
@@ -76,4 +83,21 @@ func setupDatabase() (*gorm.DB, error) {
 
 	utils.Logger.Println("Database connected successfully")
 	return db, nil
+}
+
+// initializeS3StorageService initializes the S3 storage service using StorageConfig
+func initializeS3StorageService(storageConfig config.StorageConfig) (storage.StorageService, error) {
+	// Initialize S3StorageService
+	s3Service, err := storage.NewS3StorageService(
+		context.Background(),
+		storageConfig.Region,
+		storageConfig.AccessKeyID,
+		storageConfig.SecretAccessKey,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize S3 storage service: %w", err)
+	}
+
+	utils.Logger.Println("S3 Storage Service initialized successfully")
+	return s3Service, nil
 }
